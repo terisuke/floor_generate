@@ -36,36 +36,70 @@ class FloorPlanGenerator:
                 print("Continuing with base model only")
             
         try:
-            self.pipeline = self.trainer.get_pipeline_for_inference()
+            base_pipeline = self.trainer.get_pipeline_for_inference()
+            
+            # Convert to Img2Img pipeline for image conditioning
+            from diffusers import StableDiffusionImg2ImgPipeline
+            self.pipeline = StableDiffusionImg2ImgPipeline(
+                vae=base_pipeline.vae,
+                text_encoder=base_pipeline.text_encoder,
+                tokenizer=base_pipeline.tokenizer,
+                unet=base_pipeline.unet,
+                scheduler=base_pipeline.scheduler,
+                safety_checker=None,
+                feature_extractor=base_pipeline.feature_extractor,
+                requires_safety_checker=False
+            ).to(self.device)
+            
         except AttributeError as e:
             print(f"Error getting inference pipeline: {e}")
             print("Creating pipeline directly")
+            from diffusers import StableDiffusionImg2ImgPipeline
+            
             from diffusers import StableDiffusionPipeline
-            self.pipeline = StableDiffusionPipeline.from_pretrained(
+            base_pipeline = StableDiffusionPipeline.from_pretrained(
                 self.trainer.model_id,
                 unet=self.trainer.unet,
-                torch_dtype=self.dtype,  # Use appropriate dtype based on device
+                torch_dtype=self.dtype,
                 use_auth_token=False,
                 safety_checker=None,
                 requires_safety_checker=False
+            )
+            
+            self.pipeline = StableDiffusionImg2ImgPipeline(
+                vae=base_pipeline.vae,
+                text_encoder=base_pipeline.text_encoder,
+                tokenizer=base_pipeline.tokenizer,
+                unet=base_pipeline.unet,
+                scheduler=base_pipeline.scheduler,
+                safety_checker=None,
+                feature_extractor=base_pipeline.feature_extractor,
+                requires_safety_checker=False
             ).to(self.device)
-            self.pipeline.safety_checker = None
         
     def generate_plan(self, site_mask, prompt, num_inference_steps=50, guidance_scale=7.5):
         """敷地マスクとプロンプトから平面図を生成"""
         if isinstance(site_mask, np.ndarray):
-            site_mask = Image.fromarray((site_mask * 255).astype(np.uint8))
+            # Convert to PIL Image
+            if len(site_mask.shape) == 2:  # Grayscale
+                site_mask = Image.fromarray((site_mask).astype(np.uint8))
+            else:
+                site_mask = Image.fromarray(site_mask.astype(np.uint8))
         elif isinstance(site_mask, torch.Tensor):
             site_mask = Image.fromarray((site_mask.cpu().numpy()[0] * 255).astype(np.uint8))
             
         site_mask = site_mask.resize((512, 512))
+        
+        # Convert grayscale to RGB if needed
+        if site_mask.mode != "RGB":
+            site_mask = site_mask.convert("RGB")
         
         result = self.pipeline(
             prompt=prompt,
             num_inference_steps=num_inference_steps,
             guidance_scale=guidance_scale,
             image=site_mask,
-            strength=0.0  # Don't modify the image, just use it for conditioning
+            strength=0.75  # Allow some modification of the image
         )
         
         generated_image = result.images[0]

@@ -114,9 +114,10 @@ source floorplan_env/bin/activate
 pip install --upgrade pip setuptools wheel
 pip install torch==2.3.0 torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
 
-# 4. AI/ML ライブラリ
-pip install diffusers==0.27.0 transformers==4.36.0 accelerate==0.25.0
-pip install peft==0.7.1  # LoRA学習用
+# 4. AI/ML ライブラリ（互換性確認済みバージョン）
+pip install diffusers==0.19.3 transformers==4.31.0 huggingface_hub==0.16.4
+pip install peft==0.4.0 tokenizers==0.13.3 accelerate==0.25.0
+# 注意: 上記のバージョンは互換性テスト済みです。バージョン変更時は注意してください。
 
 # 5. CAD/画像処理
 pip install opencv-python==4.8.1.78 Pillow==10.1.0
@@ -136,6 +137,31 @@ pip install streamlit==1.28.0 pandas==2.1.3 numpy==1.24.4
 # 9. FreeCAD Python連携
 pip install freecad  # FreeCAD Python binding
 ```
+
+### 3.3 依存関係の互換性
+
+以下のライブラリ間には互換性の問題があります：
+- `huggingface_hub`
+- `diffusers`
+- `transformers`
+
+互換性のあるバージョン組み合わせ：
+```
+diffusers==0.19.3
+transformers==4.31.0
+huggingface_hub==0.16.4
+peft==0.4.0
+tokenizers==0.13.3
+```
+
+互換性問題を解決するためのパッチスクリプト：
+```python
+# スクリプトの先頭に追加
+import patch_diffusers
+patch_diffusers.apply_patches()
+```
+
+詳細は `dependency_compatibility.md` を参照してください。
 
 ### 3.3 プロジェクト構造
 ```
@@ -1426,8 +1452,12 @@ streamlit --version
 - ✅ **Phase 6**: 制約チェックシステム実装と統合完了
 - ✅ **Phase 7**: FreeCAD連携システム実装完了
 - ✅ **Phase 8**: 実際の実装によるUI統合完了
-- 🔄 **Phase 9**: テストと評価進行中
-- ⏳ **Phase 10**: 最終調整とドキュメント更新予定
+- ✅ **Phase 9**: 依存関係の互換性問題解決完了
+  - ✅ huggingface_hub、diffusers、transformersの互換性修正
+  - ✅ HF_HUB_CACHE属性エラーの解決
+  - ✅ パッチスクリプトの実装
+- 🔄 **Phase 10**: テストと評価進行中
+- ⏳ **Phase 11**: 最終調整とドキュメント更新予定
 
 ### 最近の実装内容
 
@@ -1447,6 +1477,51 @@ streamlit --version
 4. **画像変換ユーティリティ**:
    - PNG/JPG変換機能
    - Base64エンコード機能（インライン表示用）
+
+## 📋 次の実装項目
+
+### Phase 10: テストと評価の完了
+
+1. **エンドツーエンドテスト**:
+   - トレーニングからStreamlit表示までの完全なパイプラインテスト
+   - 異なる入力条件（サイトマスク、プロンプト）でのテスト
+   - エラー発生時の回復メカニズムのテスト
+
+2. **評価メトリクスの実装**:
+   - 生成された間取りの品質評価
+   - 制約満足度の定量的測定
+   - ユーザー体験評価フォームの追加
+
+### Phase 11: パフォーマンス最適化
+
+1. **処理速度の最適化**:
+   - 推論パイプラインの高速化（目標: 5秒以下）
+   - バッチ処理の最適化
+   - Apple Silicon (M4 Max) 向けの最適化
+
+2. **メモリ使用量の最適化**:
+   - 大規模モデルのメモリ効率化
+   - リソース使用量のモニタリング機能
+   - 低スペックデバイス向けの軽量モード
+
+3. **UI/UX改善**:
+   - レスポンシブデザインの強化
+   - プログレスバーとステータス表示の改善
+   - ユーザーフィードバックに基づく調整
+
+### Phase 12: 拡張機能
+
+1. **多言語サポート**:
+   - 英語インターフェースの追加
+   - 多言語プロンプト対応
+
+2. **追加出力フォーマット**:
+   - IFC (Industry Foundation Classes) 形式のエクスポート
+   - BIM連携機能
+
+3. **バッチ処理機能**:
+   - 複数の間取り生成と比較
+   - バリエーション生成と評価
 
 ---
 
