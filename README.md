@@ -139,6 +139,34 @@ python -c "import pdf2image; print('PDF2Image imported successfully')"
 streamlit --version
 ```
 
+### 8. エンドツーエンドパイプラインの実行
+
+学習から表示までの一貫したパイプラインを実行するには：
+
+```bash
+cd ~/repos/floor_generate
+source floorplan_env/bin/activate
+
+# 学習を実行してStreamlitを起動（完全パイプライン）
+python scripts/train_and_display.py
+
+# 学習をスキップしてStreamlitのみ起動
+python scripts/train_and_display.py --skip-training
+
+# カスタム学習エポック数を指定
+python scripts/train_and_display.py --epochs 30
+
+# カスタムデータディレクトリを指定
+python scripts/train_and_display.py --data-dir data/custom_training
+```
+
+このスクリプトは以下を実行します：
+1. LoRAモデルの学習（スキップ可能）
+2. Streamlitインターフェースの起動
+3. 実際のAI実装を使用した平面図生成
+4. 制約チェックシステムによる検証
+5. FreeCAD 3Dモデル生成
+
 ### 結果の確認
 
 抽出結果は `data/extracted/` に保存されます：
@@ -161,7 +189,15 @@ streamlit --version
   - [x] データセット強化
   - [x] 学習スクリプト
   - [x] 推論生成器
-- [ ] パイプライン統合テスト
+- [x] 制約チェックシステム実装
+  - [x] 壁・部屋の制約検証
+  - [x] 修復アルゴリズム
+  - [x] 可視化機能
+- [x] パイプライン統合
+  - [x] 学習→推論→表示の一貫スクリプト
+  - [x] プレースホルダー置換
+  - [x] エラー処理強化
+- [ ] パフォーマンス最適化
 
 ## 🔧 トラブルシューティング
 

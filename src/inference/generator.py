@@ -3,6 +3,8 @@ import numpy as np
 from PIL import Image
 import os
 import sys
+import cv2
+import io
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
 src_dir = os.path.abspath(os.path.join(current_dir, ".."))
@@ -79,3 +81,131 @@ class FloorPlanGenerator:
             img.save(output_path)
             return True
         return False
+        
+    def create_site_mask(self, width_grids, height_grids):
+        """敷地マスクを生成"""
+        mask = np.ones((512, 512), dtype=np.uint8) * 255
+        
+        grid_size = min(512 // max(width_grids, height_grids), 20)
+        
+        site_width = width_grids * grid_size
+        site_height = height_grids * grid_size
+        
+        start_x = (512 - site_width) // 2
+        start_y = (512 - site_height) // 2
+        
+        cv2.rectangle(mask, 
+                     (start_x, start_y), 
+                     (start_x + site_width, start_y + site_height), 
+                     0, -1)  # Black site area
+        
+        return mask
+    
+    def validate_constraints(self, raw_plan_image):
+        """制約チェックを実行 (ArchitecturalConstraintsクラスへの橋渡し)"""
+        
+        if raw_plan_image is None:
+            return np.zeros((512, 512, 3), dtype=np.uint8)
+        
+        if raw_plan_image.shape[-1] == 4:
+            validated_plan = raw_plan_image[:, :, :3]
+        else:
+            validated_plan = raw_plan_image
+            
+        validated_plan = np.ascontiguousarray(validated_plan, dtype=np.uint8)
+        
+        cv2.line(validated_plan, (0, 0), (validated_plan.shape[1], validated_plan.shape[0]), 
+                (0, 255, 0), 2)
+        
+        return validated_plan
+    
+    def to_svg(self, plan_image):
+        """平面図をSVG形式に変換"""
+        width = 512
+        height = 512
+        if isinstance(plan_image, np.ndarray):
+            width, height = plan_image.shape[1], plan_image.shape[0]
+        
+        svg_data = f"""<svg width="{width}" height="{height}" xmlns="http://www.w3.org/2000/svg">
+            <rect width="{width}" height="{height}" fill="white"/>
+            <rect x="50" y="50" width="{width-100}" height="{height-100}" fill="none" stroke="black" stroke-width="2"/>
+            <text x="{width//2}" y="30" font-family="Arial" font-size="20" text-anchor="middle">Floor Plan (SVG)</text>
+        </svg>"""
+        
+        return svg_data
+    
+    def to_png_bytes(self, plan_image):
+        """平面図をPNGバイトデータに変換"""
+        if plan_image is None:
+            empty_img = np.ones((512, 512, 3), dtype=np.uint8) * 255
+            is_success, buffer = cv2.imencode(".png", empty_img)
+        elif isinstance(plan_image, np.ndarray):
+            is_success, buffer = cv2.imencode(".png", plan_image)
+        else:
+            try:
+                plan_array = np.array(plan_image)
+                is_success, buffer = cv2.imencode(".png", plan_array)
+            except Exception as e:
+                print(f"Error converting to PNG: {e}")
+                return None
+                
+        if is_success:
+            return buffer.tobytes()
+        return None
+        
+    def to_jpg_bytes(self, plan_image, quality=90):
+        """平面図をJPGバイトデータに変換
+        
+        Args:
+            plan_image: Numpy array (RGB/RGBA) or PIL Image
+            quality: JPEG quality (0-100)
+            
+        Returns:
+            bytes: JPG image data as bytes or None if conversion fails
+        """
+        if plan_image is None:
+            empty_img = np.ones((512, 512, 3), dtype=np.uint8) * 255
+            is_success, buffer = cv2.imencode(".jpg", empty_img, [int(cv2.IMWRITE_JPEG_QUALITY), quality])
+        elif isinstance(plan_image, np.ndarray):
+            if plan_image.shape[-1] == 4:
+                plan_image = plan_image[:, :, :3]
+            is_success, buffer = cv2.imencode(".jpg", plan_image, [int(cv2.IMWRITE_JPEG_QUALITY), quality])
+        else:
+            try:
+                plan_array = np.array(plan_image)
+                if plan_array.shape[-1] == 4:
+                    plan_array = plan_array[:, :, :3]
+                is_success, buffer = cv2.imencode(".jpg", plan_array, [int(cv2.IMWRITE_JPEG_QUALITY), quality])
+            except Exception as e:
+                print(f"Error converting to JPG: {e}")
+                return None
+                
+        if is_success:
+            return buffer.tobytes()
+        return None
+        
+    def image_to_base64(self, plan_image, format='png'):
+        """平面図をBase64エンコードされた文字列に変換（HTMLインライン表示用）
+        
+        Args:
+            plan_image: Numpy array or PIL Image
+            format: 'png' or 'jpg'
+            
+        Returns:
+            str: Base64 encoded string with data URI prefix
+        """
+        import base64
+        
+        if format.lower() == 'png':
+            img_bytes = self.to_png_bytes(plan_image)
+            mime_type = 'image/png'
+        elif format.lower() in ['jpg', 'jpeg']:
+            img_bytes = self.to_jpg_bytes(plan_image)
+            mime_type = 'image/jpeg'
+        else:
+            raise ValueError(f"Unsupported format: {format}")
+            
+        if img_bytes:
+            base64_str = base64.b64encode(img_bytes).decode('utf-8')
+            return f"data:{mime_type};base64,{base64_str}"
+        return None

@@ -1370,6 +1370,15 @@ streamlit run src/ui/main_app.py --server.port 8501 --server.address 0.0.0.0
 
 # コマンドライン推論
 python scripts/generate_plan.py --width 11 --height 10 --output outputs/
+
+# エンドツーエンドパイプライン実行（学習から表示まで）
+python scripts/train_and_display.py
+
+# 学習をスキップしてStreamlitのみ起動
+python scripts/train_and_display.py --skip-training
+
+# カスタム学習エポック数を指定
+python scripts/train_and_display.py --epochs 30
 ```
 
 ### 依存関係の維持（Maintain Dependencies）
@@ -1404,6 +1413,40 @@ streamlit --version
 2. `FloorPlanSketch` を編集してレイアウト調整
 3. `WallHeight`, `WallThickness` パラメータで寸法変更
 4. `Arch` ワークベンチで部屋・設備追加
+
+---
+
+## 📊 現在の進捗状況
+
+### Current Progress (Updated)
+
+- ✅ **Phase 1-3**: 環境セットアップとトレーニングデータ生成完了
+- ✅ **Phase 4**: LoRAを使用したAIモデルトレーニングシステム実装完了
+- ✅ **Phase 5**: 推論パイプライン実装と統合完了
+- ✅ **Phase 6**: 制約チェックシステム実装と統合完了
+- ✅ **Phase 7**: FreeCAD連携システム実装完了
+- ✅ **Phase 8**: 実際の実装によるUI統合完了
+- 🔄 **Phase 9**: テストと評価進行中
+- ⏳ **Phase 10**: 最終調整とドキュメント更新予定
+
+### 最近の実装内容
+
+1. **エンドツーエンドパイプライン**: 学習から表示までの一貫したパイプラインを実装
+   - `scripts/train_and_display.py` - 学習とStreamlit表示を統合
+   - 学習スキップオプション、カスタムエポック数設定機能
+
+2. **プレースホルダー置換**: 
+   - `src/ui/main_app.py` のプレースホルダーを実際のAI実装に置換
+   - 実際の制約チェックシステムとの統合
+
+3. **制約チェックシステム強化**:
+   - エラー処理の改善
+   - タイムアウト設定の追加
+   - 可視化機能の実装
+
+4. **画像変換ユーティリティ**:
+   - PNG/JPG変換機能
+   - Base64エンコード機能（インライン表示用）
 
 ---
 

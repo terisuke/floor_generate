@@ -274,45 +274,117 @@ class ArchitecturalConstraints:
         # This solution (grids) would then be converted back to an image format if needed by subsequent steps.
         return solution
 
-    def validate_and_fix(self, floor_plan_image):
+    def validate_and_fix(self, floor_plan_image, timeout_sec=30):
         """平面図の制約チェックと最小修復 (Requirement 6.1)
            floor_plan_image is the output from the AI model.
+           
+           Args:
+               floor_plan_image: The image output from the AI model (numpy array)
+               timeout_sec: Maximum time in seconds to spend on constraint solving
+               
+           Returns:
+               dict: Solution grids if constraints are satisfied, None otherwise
         """
-        print("Starting validation and fix process...")
-        self.model = cp_model.CpModel() # Re-initialize model for each call
-        self.solver = cp_model.CpSolver()
-
-        # 1. グリッド化 (Convert AI output image to a usable grid format)
-        initial_grid = self.image_to_grid(floor_plan_image)
-        height, width = initial_grid.shape
-        print(f"Initial grid size: {height}x{width}")
-
-        # 2. 変数定義
-        variables = self.define_variables(height, width)
-
-        # 3. 制約定義
-        self.add_wall_constraints(variables, initial_grid) # Pass initial_grid for context if needed
-        self.add_room_constraints(variables, initial_grid) # Pass initial_grid for context
-        self.add_connectivity_constraints(variables, initial_grid) # Placeholder
-        self.add_stair_constraints(variables, initial_grid) # Pass initial_grid for context
-
-        # 4. 目的関数（最小変更）
-        # The repair variables should penalize deviation from the `initial_grid` (AI output)
-        repair_objective_vars = self.add_repair_variables(variables, initial_grid)
-        self.model.Minimize(sum(repair_objective_vars))
-        print("Objective function set to minimize repairs.")
-
-        # 5. 求解
-        print("Solving CP-SAT model...")
-        status = self.solver.Solve(self.model)
-        print(f"Solver status: {self.solver.StatusName(status)}")
-
-        if status == cp_model.OPTIMAL or status == cp_model.FEASIBLE:
-            print("Optimal or feasible solution found.")
-            return self.extract_solution(variables, height, width)
-        else:
-            print("No solution found or problem was infeasible/unbounded.")
+        try:
+            print("Starting validation and fix process...")
+            self.model = cp_model.CpModel() # Re-initialize model for each call
+            self.solver = cp_model.CpSolver()
+            
+            self.solver.parameters.max_time_in_seconds = timeout_sec
+            self.solver.parameters.log_search_progress = True
+            
+            # 1. グリッド化 (Convert AI output image to a usable grid format)
+            try:
+                initial_grid = self.image_to_grid(floor_plan_image)
+                height, width = initial_grid.shape
+                print(f"Initial grid size: {height}x{width}")
+            except Exception as e:
+                print(f"Error converting image to grid: {e}")
+                return None
+            
+            # 2. 変数定義
+            try:
+                variables = self.define_variables(height, width)
+            except Exception as e:
+                print(f"Error defining variables: {e}")
+                return None
+            
+            # 3. 制約定義
+            try:
+                self.add_wall_constraints(variables, initial_grid)
+                self.add_room_constraints(variables, initial_grid)
+                self.add_connectivity_constraints(variables, initial_grid)
+                self.add_stair_constraints(variables, initial_grid)
+            except Exception as e:
+                print(f"Error adding constraints: {e}")
+                return None
+            
+            # 4. 目的関数（最小変更）
+            try:
+                repair_objective_vars = self.add_repair_variables(variables, initial_grid)
+                self.model.Minimize(sum(repair_objective_vars))
+                print("Objective function set to minimize repairs.")
+            except Exception as e:
+                print(f"Error setting objective function: {e}")
+                return None
+            
+            # 5. 求解
+            print(f"Solving CP-SAT model (timeout: {timeout_sec}s)...")
+            status = self.solver.Solve(self.model)
+            print(f"Solver status: {self.solver.StatusName(status)}")
+            
+            if status == cp_model.OPTIMAL or status == cp_model.FEASIBLE:
+                print("Optimal or feasible solution found.")
+                solution = self.extract_solution(variables, height, width)
+                
+                solution['original_grid'] = initial_grid
+                
+                wall_changes = np.sum(solution['walls'] != initial_grid)
+                print(f"Wall cells modified: {wall_changes} out of {height*width}")
+                
+                return solution
+            else:
+                print("No solution found or problem was infeasible/unbounded.")
+                return None
+                
+        except Exception as e:
+            print(f"Unexpected error in constraint validation: {e}")
+            import traceback
+            traceback.print_exc()
             return None
+            
+    def visualize_solution(self, solution):
+        """制約解決結果の可視化（デバッグ用）
+        
+        Args:
+            solution: The solution dictionary returned by validate_and_fix
+            
+        Returns:
+            numpy.ndarray: Visualization image
+        """
+        if solution is None:
+            print("No solution to visualize")
+            return None
+            
+        # Create a visualization image
+        height, width = solution['walls'].shape
+        vis_image = np.zeros((height, width, 3), dtype=np.uint8)
+        
+        vis_image[:, :, 2] = solution['walls'] * 255
+        
+        room_display = np.zeros_like(solution['rooms'])
+        for room_id in range(1, 10):  # Room IDs 1-9
+            room_display[solution['rooms'] == room_id] = 100 + (room_id * 15)
+        vis_image[:, :, 1] = room_display
+        
+        vis_image[:, :, 0] = solution['stairs_1f'] * 255
+        
+        vis_image[0, :, :] = 255
+        vis_image[-1, :, :] = 255
+        vis_image[:, 0, :] = 255
+        vis_image[:, -1, :] = 255
+        
+        return vis_image
 
 # Example Usage (for testing, can be removed or put in a script)
 # if __name__ == '__main__':
@@ -337,4 +409,4 @@ class ArchitecturalConstraints:
 #         print("Solution Stairs:")
 #         print(solution['stairs_1f'])
 #     else:
-#         print("No solution could be found for the dummy input.") 
+#         print("No solution could be found for the dummy input.")  

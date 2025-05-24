@@ -1,8 +1,15 @@
-import FreeCAD as App
-import Draft, Arch, Part
-import numpy as np
-# from shapely.geometry import Polygon, Point # Not used in current requirement snippet
 import os
+import sys
+import numpy as np
+import cv2  # Add missing import
+
+# FreeCAD imports with error handling
+try:
+    import FreeCAD as App
+    import Draft, Arch, Part
+except ImportError:
+    print("Warning: FreeCAD not available. Using placeholder mode.")
+    App = None
 
 class FreeCADGenerator:
     def __init__(self):
@@ -398,4 +405,4 @@ class FreeCADGenerator:
 # or that FreeCAD modules can be imported standalone (e.g., via `pip install freecad`).
 # Direct execution of this script outside FreeCAD might require specific setup.
 # The placeholders for contour/element detection are significant simplifications.
-# A full implementation of those would be major sub-projects. 
+# A full implementation of those would be major sub-projects.  

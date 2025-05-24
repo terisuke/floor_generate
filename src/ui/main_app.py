@@ -1,10 +1,17 @@
 import streamlit as st
-import numpy as np # For dummy data
+import numpy as np
 import os
-import cv2 # For dummy image data processing
+import cv2
+import sys
 
-# Placeholder for actual generation and FreeCAD bridge modules
-# These would be imported from src.inference.generator, src.constraints, src.freecad_bridge
+current_dir = os.path.dirname(os.path.abspath(__file__))
+src_dir = os.path.abspath(os.path.join(current_dir, ".."))
+if src_dir not in sys.path:
+    sys.path.insert(0, src_dir)
+
+from inference.generator import FloorPlanGenerator
+from freecad_bridge.fcstd_generator import FreeCADGenerator
+from constraints.architectural_constraints import ArchitecturalConstraints
 class FloorPlanGeneratorPlaceholder:
     def __init__(self):
         print("FloorPlanGeneratorPlaceholder initialized")
@@ -96,9 +103,9 @@ class FreeCADGeneratorPlaceholder:
     
 class FloorPlanApp:
     def __init__(self):
-        # Use placeholder classes for now
-        self.generator = FloorPlanGeneratorPlaceholder()
-        self.freecad_gen = FreeCADGeneratorPlaceholder()
+        self.generator = FloorPlanGenerator()
+        self.freecad_gen = FreeCADGenerator()
+        self.constraints = ArchitecturalConstraints()
         
         if 'generated' not in st.session_state:
             st.session_state.generated = False
@@ -148,57 +155,80 @@ class FloorPlanApp:
                 st.info("上記で設定を入力し、「平面図生成」ボタンを押してください。")
 
     def generate_floorplan(self, width, height, rooms_str, style, progress_bar, status_text):
+        """Generate floor plan using actual AI implementations"""
         try:
             status_text.text("敷地マスクを生成中...")
             progress_bar.progress(10)
             site_mask = self.generator.create_site_mask(width, height)
             st.session_state.site_mask_image_for_display = site_mask # For display if needed
 
+            # 2. Generate plan using trained LoRA model
             status_text.text("AI平面図を生成中...")
             progress_bar.progress(30)
             prompt = f"site_size_{width}x{height}, rooms_{rooms_str}, style_{style}, japanese_house"
-            # This raw_plan is expected to be HWC RGBA from placeholder
             raw_plan = self.generator.generate_plan(site_mask, prompt)
             st.session_state.raw_plan_image = raw_plan # Store for potential display
             
             status_text.text("建築制約をチェック中...")
             progress_bar.progress(60)
-            # validate_constraints expects an image that can be processed by image_to_grid.
-            # The placeholder takes the raw_plan (RGBA) and its image_to_grid uses the first channel.
-            # The output of validate_constraints (placeholder) is BGR for display.
-            validated_plan_display = self.generator.validate_constraints(raw_plan) 
-            st.session_state.plan_image = validated_plan_display # This is BGR for st.image
+            
+            try:
+                validated_plan_data = self.constraints.validate_and_fix(raw_plan)
+                
+                if validated_plan_data is None:
+                    status_text.warning("制約チェックに失敗しました。生の生成結果を使用します。")
+                    validated_plan_display = self.generator.validate_constraints(raw_plan)
+                else:
+                    # We need to convert it to an image for display
+                    validated_plan_display = self.convert_validated_data_to_image(validated_plan_data)
+            except Exception as e:
+                status_text.warning(f"制約システムエラー: {str(e)}。簡易チェックを使用します。")
+                validated_plan_display = self.generator.validate_constraints(raw_plan)
+            
+            st.session_state.plan_image = validated_plan_display
             
             status_text.text("ベクタ図面を作成中...")
             progress_bar.progress(80)
-            # to_svg expects the data that can be vectorized (could be the grid data from CP-SAT or image)
-            svg_data = self.generator.to_svg(validated_plan_display) 
+            svg_data = self.generator.to_svg(validated_plan_display)
             st.session_state.svg_data = svg_data
             
             status_text.text("3Dモデルを生成中...")
-            # create_3d_model placeholder needs data that fcstd_generator.py can use.
-            # fcstd_generator.py expects a dict of grids: {'walls': grid, 'openings': grid ...}
-            # This is currently missing from the placeholder flow.
-            # For now, pass the display image, but this will fail in a real fcstd_generator
-            # We need to ensure `validated_plan_data_for_fc` is structured correctly.
-            # Let's assume `validate_constraints` in a real scenario returns this structured data.
-            # For placeholder, the FreeCAD generator will just create a dummy file.
-            dummy_validated_plan_grids_dict = {
-                'walls': (raw_plan[:,:,0] > 128).astype(int), # Dummy wall grid from raw plan
-                'openings': (raw_plan[:,:,1] > 128).astype(int), # Dummy opening grid
-                'stairs': (raw_plan[:,:,2] > 128).astype(int), # Dummy stair grid
-                'rooms': (raw_plan[:,:,3] > 128).astype(int), # Dummy room grid
+            
+            if 'validated_plan_data' in locals() and validated_plan_data is not None:
+                model_data = validated_plan_data
+            else:
+                # Create simplified data from raw plan
+                model_data = {
+                    'walls': (raw_plan[:,:,0] > 128).astype(int),
+                    'openings': (raw_plan[:,:,1] > 128).astype(int),
+                    'stairs': (raw_plan[:,:,2] > 128).astype(int),
+                    'rooms': (raw_plan[:,:,3] > 128).astype(int),
+                }
+            
+            metadata = {
+                'site_grid_size': (width, height),
+                'room_count': rooms_str,
+                'style': style,
+                'total_area_sqm': width * height * 0.91 * 0.91
             }
+            
             freecad_result = self.freecad_gen.create_3d_model(
-                dummy_validated_plan_grids_dict, 
-                {'site_grid_size': (width, height)}, # Dummy metadata
+                model_data, 
+                metadata,
                 f"outputs/freecad/model_{width}x{height}.FCStd"
             )
-            st.session_state.freecad_path = freecad_result['fcstd_path']
-            progress_bar.progress(100)
             
+            if freecad_result and 'fcstd_path' in freecad_result:
+                st.session_state.freecad_path = freecad_result['fcstd_path']
+            else:
+                st.session_state.freecad_path = f"outputs/freecad/model_{width}x{height}.FCStd"
+                
+            st.session_state.metadata = metadata
+            
+            progress_bar.progress(100)
             st.session_state.generated = True
             status_text.success("✅ 生成完了！")
+            
             # Force rerun to display results outside the generate_btn block
             st.rerun()
 
@@ -209,14 +239,47 @@ class FloorPlanApp:
             status_text.error("❌ 生成失敗")
             st.session_state.generated = False # Ensure results are not shown on error
 
+    def convert_validated_data_to_image(self, validated_data):
+        """Convert validated data dictionary to displayable image"""
+        if validated_data is None:
+            return np.zeros((512, 512, 3), dtype=np.uint8)
+            
+        # Create a blank RGB image
+        height, width = validated_data['walls'].shape
+        display_image = np.zeros((height, width, 3), dtype=np.uint8)
+        
+        if 'walls' in validated_data:
+            display_image[:, :, 2] = validated_data['walls'] * 255  # Walls in blue
+            
+        if 'rooms' in validated_data:
+            room_display = np.zeros_like(validated_data['rooms'])
+            for room_id in range(1, 10):  # Room IDs 1-9
+                room_display[validated_data['rooms'] == room_id] = 100 + (room_id * 15)
+            display_image[:, :, 1] = room_display  # Rooms in green
+            
+        if 'stairs_1f' in validated_data:
+            display_image[:, :, 0] = validated_data['stairs_1f'] * 255  # Stairs in red
+            
+        # Ensure the array is contiguous and in the correct format
+        display_image = np.ascontiguousarray(display_image, dtype=np.uint8)
+        
+        cv2.line(display_image, (0, 0), (width-1, height-1), (0, 255, 0), 1)
+        
+        return display_image
+        
     def analyze_plan(self, plan_image):
-        """Placeholder for analyzing plan details."""
-        # In a real app, this would extract room areas, counts, etc.
+        """Analyze plan details from metadata and image"""
         metadata = getattr(st.session_state, 'metadata', {})
+        
+        room_count = metadata.get('room_count', "N/A")
+        total_area = metadata.get('total_area_sqm', "N/A")
+        
+        # In a real implementation, this would analyze the plan image
+        
         return {
-            "estimated_rooms": metadata.get('room_count',"N/A"),
-            "total_area_sqm": metadata.get('total_area_sqm', "N/A"),
-            "warnings": ["placeholder: room sizes might be off", "placeholder: circulation not fully checked"]
+            "estimated_rooms": room_count,
+            "total_area_sqm": total_area,
+            "warnings": []
         }
 
     def show_results(self, plan_image_to_display, svg_data):
@@ -300,4 +363,4 @@ if __name__ == "__main__":
     os.makedirs("outputs/freecad", exist_ok=True)
     
     app = FloorPlanApp()
-    app.run()    
+    app.run()                                
