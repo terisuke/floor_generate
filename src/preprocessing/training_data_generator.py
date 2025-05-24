@@ -6,8 +6,8 @@ import tempfile
 from glob import glob
 from pathlib import Path
 import logging
-from src.preprocessing.dimension_extractor import DimensionExtractor
-from src.preprocessing.grid_normalizer import GridNormalizer
+from preprocessing.dimension_extractor import DimensionExtractor
+from preprocessing.grid_normalizer import GridNormalizer
 import svgwrite
 from svglib.svglib import svg2rlg
 from reportlab.graphics import renderPM
@@ -748,4 +748,4 @@ class TrainingDataGenerator:
     # or integrating with command-line tools (like `mutool` or `inkscape`) might be needed,
     # but extracting vector data reliably from arbitrary architectural PDFs is challenging.
     # For the MVP, the placeholder approach for image generation and element separation is pragmatic,
-    # but acknowledges this deviation from the detailed requirement steps (PDF->SVG->PNG->Separate).                                                                                                                        
+    # but acknowledges this deviation from the detailed requirement steps (PDF->SVG->PNG->Separate).                                                                                                                                                                
