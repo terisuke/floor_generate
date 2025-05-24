@@ -13,7 +13,7 @@ then
 fi
 
 echo "Installing basic tools via Homebrew..."
-brew install python@3.11 git cmake pkg-config poppler tesseract
+brew install python@3.12 git cmake pkg-config poppler tesseract
 # FreeCAD Cask install might need to be conditional or handled carefully
 # For now, assuming user handles FreeCAD app installation manually or has it.
 # brew install --cask freecad # Commenting out as GUI app install might not be desired in script for all users
@@ -78,4 +78,4 @@ echo "Consider running: pip install -r $REQUIREMENTS_FILE after activating the v
 echo "\nIMPORTANT: FreeCAD application (version 0.22 or as per requirements) should be installed separately."
 echo "The FreeCAD Python bindings might need specific setup depending on your FreeCAD installation method."
 
-echo "\nSetup script finished. Please activate the virtual environment and install Python packages." 
+echo "\nSetup script finished. Please activate the virtual environment and install Python packages."          

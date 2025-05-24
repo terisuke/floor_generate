@@ -6,8 +6,8 @@ import tempfile
 from glob import glob
 from pathlib import Path
 import logging
-from src.preprocessing.dimension_extractor import DimensionExtractor
-from src.preprocessing.grid_normalizer import GridNormalizer
+from preprocessing.dimension_extractor import DimensionExtractor
+from preprocessing.grid_normalizer import GridNormalizer
 import svgwrite
 from svglib.svglib import svg2rlg
 from reportlab.graphics import renderPM
@@ -49,53 +49,137 @@ class TrainingDataGenerator:
         """
         logger.info(f"Processing PDF collection from {pdf_dir}")
         
+        if not os.path.exists(pdf_dir):
+            logger.error(f"PDF directory does not exist: {pdf_dir}")
+            raise FileNotFoundError(f"PDF directory not found: {pdf_dir}")
+            
         pdf_files = glob(f"{pdf_dir}/*.pdf") + glob(f"{pdf_dir}/*.PDF")
+        
+        if not pdf_files:
+            logger.warning(f"No PDF files found in {pdf_dir}")
+            return 0
+            
         logger.info(f"Found {len(pdf_files)} PDF files")
         
-        os.makedirs(output_dir, exist_ok=True)
+        try:
+            os.makedirs(output_dir, exist_ok=True)
+        except PermissionError:
+            logger.error(f"Permission denied when creating output directory: {output_dir}")
+            raise
+        except Exception as e:
+            logger.error(f"Failed to create output directory {output_dir}: {e}")
+            raise
         
         successful = 0
         for i, pdf_path in enumerate(pdf_files):
-            try:
-                logger.info(f"[{i+1}/{len(pdf_files)}] Processing {pdf_path}")
+            logger.info(f"[{i+1}/{len(pdf_files)}] Processing {pdf_path}")
+            
+            if not os.path.isfile(pdf_path):
+                logger.error(f"PDF file does not exist or is not a file: {pdf_path}")
+                continue
                 
+            if not os.access(pdf_path, os.R_OK):
+                logger.error(f"PDF file is not readable: {pdf_path}")
+                continue
+            
+            try:
                 # 1. Extract dimensions from PDF
                 dimensions = self.dimension_extractor.extract_from_pdf(pdf_path)
+                
                 if not dimensions:
-                    logger.warning(f"No dimensions extracted from {pdf_path}")
+                    logger.error(f"No dimensions extracted from {pdf_path}")
                     continue
+                
+                if len(dimensions) < 2:
+                    logger.warning(f"Only {len(dimensions)} dimensions extracted from {pdf_path}. At least 2 recommended.")
                     
                 logger.info(f"Extracted {len(dimensions)} dimensions")
                 
+                # 2. Normalize dimensions
                 normalized = self.grid_normalizer.normalize_dimensions(dimensions)
+                
+                if not normalized:
+                    logger.error(f"Failed to normalize dimensions from {pdf_path}")
+                    continue
+                    
                 logger.info(f"Normalized {len(normalized)} dimensions")
                 
                 svg_path = self.pdf_to_svg(pdf_path)
+                
+                # Validate SVG conversion
+                if not svg_path or not os.path.exists(svg_path):
+                    logger.error(f"Failed to convert PDF to SVG: {pdf_path}")
+                    continue
+                    
                 logger.info(f"Converted PDF to SVG: {svg_path}")
                 
                 # 4. Convert SVG to grid image
                 grid_image = self.svg_to_grid_image(svg_path, normalized)
+                
+                # Validate grid image
+                if grid_image is None or grid_image.size == 0:
+                    logger.error(f"Failed to generate grid image from SVG: {svg_path}")
+                    continue
+                    
                 logger.info(f"Converted SVG to grid image of size {grid_image.shape}")
                 
                 channels = self.separate_elements(grid_image)
+                
+                if channels is None or channels.size == 0 or channels.shape[2] != 4:
+                    logger.error(f"Failed to separate elements from grid image for {pdf_path}")
+                    continue
+                    
                 logger.info(f"Separated elements into {channels.shape[2]} channels")
                 
                 site_mask = self.create_site_mask(normalized)
+                
+                if site_mask is None or site_mask.size == 0:
+                    logger.error(f"Failed to create site mask for {pdf_path}")
+                    continue
+                    
                 logger.info(f"Created site mask of size {site_mask.shape}")
                 
                 metadata = self.create_metadata(normalized, channels, pdf_path)
                 
-                pair_dir = f"{output_dir}/pair_{i:04d}"
-                self.save_training_pair(site_mask, channels, metadata, pair_dir)
-                logger.info(f"Saved training pair to {pair_dir}")
+                if not metadata:
+                    logger.error(f"Failed to create metadata for {pdf_path}")
+                    continue
                 
+                required_fields = ['source_pdf', 'normalized_dimensions', 'channels_info']
+                missing_fields = [field for field in required_fields if field not in metadata]
+                
+                if missing_fields:
+                    logger.error(f"Metadata missing required fields: {missing_fields}")
+                    continue
+                
+                pair_dir = f"{output_dir}/pair_{i:04d}"
+                
+                try:
+                    self.save_training_pair(site_mask, channels, metadata, pair_dir)
+                except Exception as e:
+                    logger.error(f"Failed to save training pair to {pair_dir}: {e}")
+                    continue
+                
+                expected_files = [
+                    f"{pair_dir}/site_mask.png",
+                    f"{pair_dir}/floor_plan.png",
+                    f"{pair_dir}/metadata.json"
+                ]
+                
+                missing_files = [f for f in expected_files if not os.path.exists(f)]
+                
+                if missing_files:
+                    logger.error(f"Failed to save all required files: {missing_files}")
+                    continue
+                
+                logger.info(f"Saved training pair to {pair_dir}")
                 successful += 1
                 
             except Exception as e:
                 logger.error(f"Error processing {pdf_path}: {e}")
                 import traceback
                 traceback.print_exc()
-                continue
+                break
         
         logger.info(f"Successfully processed {successful}/{len(pdf_files)} files")
         return successful
@@ -205,98 +289,284 @@ class TrainingDataGenerator:
 
 
     def separate_elements(self, grid_image):
-        """建築要素をチャンネル分離 (Placeholder)"""
-        print("Placeholder: Separating elements...")
-        # This is highly dependent on the `pdf_to_grid_image_placeholder` output.
-        # Assuming the grid_image is a grayscale representation of the floor plan.
-        # In a real scenario, this would involve image processing (line detection,
-        # shape analysis) or using information from the vector parsing step.
-
-        # For now, create dummy channels based on the input grayscale image
+        """建築要素をチャンネル分離 (Enhanced implementation)"""
+        logger.info("Separating architectural elements...")
+        
         rgba = np.zeros((self.target_size[0], self.target_size[1], 4), dtype=np.uint8)
-
-        # Dummy logic:
-        # Channel 0 (Red): Simulate Walls (e.g., thicker lines)
-        # Channel 1 (Green): Simulate Openings (e.g., breaks in lines)
-        # Channel 2 (Blue): Simulate Stairs (e.g., specific patterns)
-        # Channel 3 (Alpha): Simulate Rooms (e.g., areas enclosed by walls)
-
-        # Simple edge detection to simulate walls
-        walls = cv2.Canny(grid_image, 50, 150)
-        rgba[:,:,0] = walls # Use Canny output as dummy wall channel
-
-        # Openings - very basic: simulate random openings in walls
+        
+        # Make a copy of the input image for processing
+        img = grid_image.copy()
+        
+        if len(img.shape) == 3:
+            img_gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
+        else:
+            img_gray = img
+            
+        img_filtered = cv2.bilateralFilter(img_gray, 9, 75, 75)
+        
+        thresh = cv2.adaptiveThreshold(
+            img_filtered, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, 
+            cv2.THRESH_BINARY_INV, 11, 2
+        )
+        
+        kernel_line = np.ones((3, 3), np.uint8)
+        walls = cv2.morphologyEx(thresh, cv2.MORPH_CLOSE, kernel_line)
+        
+        edges = cv2.Canny(walls, 50, 150, apertureSize=3)
+        lines = cv2.HoughLinesP(
+            edges, 1, np.pi/180, 
+            threshold=50, minLineLength=30, maxLineGap=10
+        )
+        
+        walls_refined = np.zeros(self.target_size, dtype=np.uint8)
+        if lines is not None:
+            for line in lines:
+                x1, y1, x2, y2 = line[0]
+                cv2.line(walls_refined, (x1, y1), (x2, y2), 255, 2)
+        
+        if lines is None or len(lines) < 5:
+            walls_refined = walls
+            
+        walls_refined = cv2.dilate(walls_refined, kernel_line, iterations=1)
+        rgba[:,:,0] = walls_refined
+        
+        # Detect potential door/window openings by finding gaps in walls
         openings = np.zeros(self.target_size, dtype=np.uint8)
-        # Randomly place some "openings" along dummy walls
-        wall_pixels = np.argwhere(walls > 0)
-        if len(wall_pixels) > 100: # Ensure enough wall pixels
-            sample_indices = np.random.choice(len(wall_pixels), 50, replace=False) # Sample 50 points
-            for idx in sample_indices:
-                r, c = wall_pixels[idx]
-                # "Clear" a small area around the point
-                min_r, max_r = max(0, r-3), min(self.target_size[0], r+3)
-                min_c, max_c = max(0, c-3), min(self.target_size[1], c+3)
-                openings[min_r:max_r, min_c:max_c] = 255 # White for opening
-        rgba[:,:,1] = openings # Dummy opening channel
-
-        # Stairs - even simpler: simulate a random rectangle for stairs
+        
+        wall_contours, _ = cv2.findContours(
+            walls_refined, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE
+        )
+        
+        for contour in wall_contours:
+            epsilon = 0.02 * cv2.arcLength(contour, True)
+            approx = cv2.approxPolyDP(contour, epsilon, True)
+            
+            if len(approx) >= 4 and cv2.contourArea(approx) < 500:
+                cv2.drawContours(openings, [approx], 0, 255, -1)
+        
+        if cv2.countNonZero(openings) < 50:
+            # Find wall pixels
+            wall_pixels = np.argwhere(walls_refined > 0)
+            if len(wall_pixels) > 100:
+                sample_count = min(30, len(wall_pixels) // 10)
+                sample_indices = np.random.choice(len(wall_pixels), sample_count, replace=False)
+                
+                for idx in sample_indices:
+                    r, c = wall_pixels[idx]
+                    min_r, max_r = max(0, r-5), min(self.target_size[0], r+5)
+                    min_c, max_c = max(0, c-5), min(self.target_size[1], c+5)
+                    openings[min_r:max_r, min_c:max_c] = 255
+        
+        rgba[:,:,1] = openings
+        
         stairs = np.zeros(self.target_size, dtype=np.uint8)
-        if self.target_size[0] > 50 and self.target_size[1] > 50:
-             st_x = np.random.randint(self.target_size[0] // 4, self.target_size[0] * 3 // 4 - 20)
-             st_y = np.random.randint(self.target_size[1] // 4, self.target_size[1] * 3 // 4 - 20)
-             cv2.rectangle(stairs, (st_x, st_y), (st_x + 20, st_y + 30), 255, -1) # White rectangle for stairs
-        rgba[:,:,2] = stairs # Dummy stair channel
-
-
-        # Rooms - fill enclosed areas. Requires proper contour finding and filling based on walls.
-        # This is complex with current dummy wall representation.
-        # For now, let's create a dummy "room" channel that's just the inverse of walls (roughly empty space)
-        rooms = cv2.bitwise_not(walls) # Simple inverse of walls as dummy room area
-        rgba[:,:,3] = rooms # Dummy room channel
-
-        # Note: A proper implementation needs to use geometric data or advanced image processing
-        # to accurately identify and separate these architectural elements based on drawing conventions.
-        # The current implementation is a simplified placeholder.
-
+        
+        if lines is not None and len(lines) > 10:
+            angle_groups = {}
+            for line in lines:
+                x1, y1, x2, y2 = line[0]
+                if x2 - x1 == 0:  # Vertical line
+                    angle = 90
+                else:
+                    angle = np.arctan((y2 - y1) / (x2 - x1)) * 180 / np.pi
+                
+                angle_key = round(angle / 5) * 5
+                if angle_key not in angle_groups:
+                    angle_groups[angle_key] = []
+                angle_groups[angle_key].append(line[0])
+            
+            for angle, lines_group in angle_groups.items():
+                if len(lines_group) >= 3:
+                    if abs(angle) < 45:  # More horizontal
+                        lines_group.sort(key=lambda l: l[1])  # Sort by y
+                    else:  # More vertical
+                        lines_group.sort(key=lambda l: l[0])  # Sort by x
+                    
+                    positions = [l[1] if abs(angle) < 45 else l[0] for l in lines_group]
+                    diffs = np.diff(positions)
+                    
+                    if len(diffs) >= 2 and np.std(diffs) < np.mean(diffs) * 0.3:
+                        for line in lines_group:
+                            x1, y1, x2, y2 = line
+                            cv2.line(stairs, (x1, y1), (x2, y2), 255, 3)
+                        
+                        min_x = min([l[0] for l in lines_group] + [l[2] for l in lines_group])
+                        max_x = max([l[0] for l in lines_group] + [l[2] for l in lines_group])
+                        min_y = min([l[1] for l in lines_group] + [l[3] for l in lines_group])
+                        max_y = max([l[1] for l in lines_group] + [l[3] for l in lines_group])
+                        
+                        cv2.rectangle(stairs, (min_x, min_y), (max_x, max_y), 255, -1)
+                        break  # Only detect one staircase for now
+        
+        if cv2.countNonZero(stairs) < 50:
+            wall_distance = cv2.distanceTransform(cv2.bitwise_not(walls_refined), cv2.DIST_L2, 5)
+            possible_locations = np.argwhere((wall_distance > 10) & (wall_distance < 30))
+            
+            if len(possible_locations) > 0:
+                idx = np.random.randint(0, len(possible_locations))
+                y, x = possible_locations[idx]
+                
+                stair_width = 20
+                stair_height = 30
+                stair_steps = 5
+                step_height = stair_height // stair_steps
+                
+                for i in range(stair_steps):
+                    y_pos = y + i * step_height
+                    if 0 <= y_pos < self.target_size[0] and 0 <= x < self.target_size[1]:
+                        cv2.line(stairs, (x, y_pos), (x + stair_width, y_pos), 255, 2)
+                
+                cv2.rectangle(stairs, (x, y), (x + stair_width, y + stair_height), 255, -1)
+        
+        rgba[:,:,2] = stairs
+        
+        # Create a mask excluding walls for flood filling
+        non_wall_mask = cv2.bitwise_not(walls_refined)
+        
+        walls_dilated = cv2.dilate(walls_refined, kernel_line, iterations=2)
+        
+        # Create a copy for flood filling
+        rooms = np.zeros(self.target_size, dtype=np.uint8)
+        
+        dist_transform = cv2.distanceTransform(non_wall_mask, cv2.DIST_L2, 5)
+        _, dist_max_val, _, dist_max_loc = cv2.minMaxLoc(dist_transform)
+        
+        room_seeds = []
+        dist_threshold = max(5, dist_max_val * 0.5)
+        potential_seeds = np.argwhere(dist_transform > dist_threshold)
+        
+        if len(potential_seeds) > 0:
+            grid_size = 4  # 4x4 grid
+            cell_h = self.target_size[0] // grid_size
+            cell_w = self.target_size[1] // grid_size
+            
+            for i in range(grid_size):
+                for j in range(grid_size):
+                    cell_seeds = [
+                        (y, x) for y, x in potential_seeds 
+                        if i*cell_h <= y < (i+1)*cell_h and j*cell_w <= x < (j+1)*cell_w
+                    ]
+                    
+                    if cell_seeds:
+                        room_seeds.append(cell_seeds[np.random.randint(0, len(cell_seeds))])
+        
+        if not room_seeds:
+            for i in range(1, 4):
+                for j in range(1, 4):
+                    room_seeds.append((
+                        i * self.target_size[0] // 4,
+                        j * self.target_size[1] // 4
+                    ))
+        
+        for seed_y, seed_x in room_seeds:
+            if non_wall_mask[seed_y, seed_x] > 0:  # Only fill if not on a wall
+                mask = np.zeros((self.target_size[0]+2, self.target_size[1]+2), np.uint8)
+                
+                cv2.floodFill(
+                    rooms, mask, (seed_x, seed_y), 255, 
+                    loDiff=0, upDiff=0, 
+                    flags=8 | (255 << 8) | cv2.FLOODFILL_MASK_ONLY
+                )
+        
+        contours, _ = cv2.findContours(rooms, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        for contour in contours:
+            if cv2.contourArea(contour) < 100:  # Minimum room size
+                cv2.drawContours(rooms, [contour], 0, 0, -1)
+        
+        if cv2.countNonZero(rooms) < 100:
+            rooms = cv2.bitwise_not(walls_dilated)
+            
+            contours, _ = cv2.findContours(rooms, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            for contour in contours:
+                if cv2.contourArea(contour) < 100:
+                    cv2.drawContours(rooms, [contour], 0, 0, -1)
+        
+        rgba[:,:,3] = rooms
+        
         return rgba
 
     def create_site_mask(self, normalized_dimensions):
-        """敷地マスク生成"""
-        print("Placeholder: Creating site mask...")
-        # Assume site size is the first normalized dimension entry and is a list [width, height]
-        site_dims = None
-        for dim_info in normalized_dimensions:
-            if dim_info.get('grid_type') == 'site_size' and isinstance(dim_info.get('normalized'), list):
-                 site_dims = dim_info['normalized']
-                 break
-
-        if site_dims is None:
-             print("Warning: Site dimensions not found for mask. Using default size.")
-             site_width_grids = 11 # Default
-             site_height_grids = 10 # Default
+        """
+        敷地マスク生成 - Create site mask from normalized dimensions
+        
+        Args:
+            normalized_dimensions: List of normalized dimension dictionaries
+            
+        Returns:
+            Binary mask image representing buildable site area
+        """
+        logger.info("Creating site mask from normalized dimensions...")
+        
+        # Initialize grid normalizer for grid-to-pixel conversion
+        grid_normalizer = GridNormalizer()
+        
+        # Extract site dimensions from normalized dimensions
+        site_dims = [d for d in normalized_dimensions if d.get('type') == 'area']
+        
+        if not site_dims:
+            # If no area dimensions found, try to find the two largest linear dimensions
+            linear_dims = sorted(
+                [d for d in normalized_dimensions if d.get('type') == 'linear'],
+                key=lambda x: x.get('original', 0),
+                reverse=True
+            )
+            
+            if len(linear_dims) >= 2:
+                logger.info("Using largest linear dimensions as site dimensions")
+                width_mm = linear_dims[0].get('normalized_mm', 10920)  # Default to 12 grid units
+                height_mm = linear_dims[1].get('normalized_mm', 10920)
+                
+                width_grid = round(width_mm / 910)
+                height_grid = round(height_mm / 910)
+            else:
+                logger.warning("Insufficient dimensions found. Using default site size.")
+                width_grid = 12  # Default to 12x12 grid units
+                height_grid = 12
         else:
-            site_width_grids = site_dims[0]['grid_count']
-            site_height_grids = site_dims[1]['grid_count']
-
-
-        mask = np.zeros(self.target_size, dtype=np.uint8) # Black background
-
-        # Draw a white rectangle representing the site boundary
-        # Need to scale grid dimensions to target_size pixels
-        # Assuming maximum grid size is around 20x20 fitting into 256x256
-        pixels_per_grid = self.target_size[0] / 20 # Example scaling factor
-
-        mask_width_pixels = int(site_width_grids * pixels_per_grid)
-        mask_height_pixels = int(site_height_grids * pixels_per_grid)
-
-        # Center the mask
+            logger.info("Using area dimensions for site mask")
+            if isinstance(site_dims[0].get('original'), list) and len(site_dims[0]['original']) >= 2:
+                width_mm = site_dims[0]['original'][0]
+                height_mm = site_dims[0]['original'][1]
+                
+                width_grid = round(width_mm / 910)
+                height_grid = round(height_mm / 910)
+            else:
+                logger.warning("Invalid area dimension format. Using default site size.")
+                width_grid = 12
+                height_grid = 12
+        
+        logger.info(f"Site dimensions: {width_grid}x{height_grid} grid units")
+        
+        # Calculate pixels per grid based on target size and grid dimensions
+        max_grid_dimension = max(width_grid, height_grid)
+        margin_factor = 0.9  # Leave 10% margin
+        
+        pixels_per_grid = min(
+            int((self.target_size[0] * margin_factor) / max_grid_dimension),
+            int((self.target_size[1] * margin_factor) / max_grid_dimension)
+        )
+        
+        pixels_per_grid = max(pixels_per_grid, 8)
+        
+        logger.info(f"Using {pixels_per_grid} pixels per grid unit")
+        
+        # Calculate mask dimensions in pixels
+        mask_width_pixels = int(width_grid * pixels_per_grid)
+        mask_height_pixels = int(height_grid * pixels_per_grid)
+        
+        mask = np.zeros(self.target_size, dtype=np.uint8)
+        
+        # Center the mask in the target image
         start_x = (self.target_size[0] - mask_width_pixels) // 2
         start_y = (self.target_size[1] - mask_height_pixels) // 2
         end_x = start_x + mask_width_pixels
         end_y = start_y + mask_height_pixels
-
-        cv2.rectangle(mask, (start_x, start_y), (end_x, end_y), 255, -1) # White rectangle
-
+        
+        # Draw the site boundary as a white rectangle
+        cv2.rectangle(mask, (start_x, start_y), (end_x, end_y), 255, -1)
+        
+        # For now, we'll just use the rectangular boundary
+        
         return mask
 
 
@@ -478,4 +748,4 @@ class TrainingDataGenerator:
     # or integrating with command-line tools (like `mutool` or `inkscape`) might be needed,
     # but extracting vector data reliably from arbitrary architectural PDFs is challenging.
     # For the MVP, the placeholder approach for image generation and element separation is pragmatic,
-    # but acknowledges this deviation from the detailed requirement steps (PDF->SVG->PNG->Separate).                    
+    # but acknowledges this deviation from the detailed requirement steps (PDF->SVG->PNG->Separate).                                                                                                                                                                
