@@ -29,8 +29,8 @@ class TrainingDataGenerator:
             target_size: Target image size (width, height) in pixels
         """
         self.target_size = target_size
-        self.extractor = DimensionExtractor()
-        self.normalizer = GridNormalizer()
+        self.dimension_extractor = DimensionExtractor()
+        self.grid_normalizer = GridNormalizer()
         
         self.wall_thickness = 4
         
@@ -49,7 +49,7 @@ class TrainingDataGenerator:
         """
         logger.info(f"Processing PDF collection from {pdf_dir}")
         
-        pdf_files = glob(f"{pdf_dir}/*.pdf")
+        pdf_files = glob(f"{pdf_dir}/*.pdf") + glob(f"{pdf_dir}/*.PDF")
         logger.info(f"Found {len(pdf_files)} PDF files")
         
         os.makedirs(output_dir, exist_ok=True)
@@ -60,14 +60,14 @@ class TrainingDataGenerator:
                 logger.info(f"[{i+1}/{len(pdf_files)}] Processing {pdf_path}")
                 
                 # 1. Extract dimensions from PDF
-                dimensions = self.extractor.extract_from_pdf(pdf_path)
+                dimensions = self.dimension_extractor.extract_from_pdf(pdf_path)
                 if not dimensions:
                     logger.warning(f"No dimensions extracted from {pdf_path}")
                     continue
                     
                 logger.info(f"Extracted {len(dimensions)} dimensions")
                 
-                normalized = self.normalizer.normalize_dimensions(dimensions)
+                normalized = self.grid_normalizer.normalize_dimensions(dimensions)
                 logger.info(f"Normalized {len(normalized)} dimensions")
                 
                 svg_path = self.pdf_to_svg(pdf_path)
@@ -140,8 +140,8 @@ class TrainingDataGenerator:
             for line in lines:
                 x1, y1, x2, y2 = line[0]
                 dwg.add(dwg.line(
-                    start=(x1, y1), 
-                    end=(x2, y2), 
+                    start=(int(x1), int(y1)), 
+                    end=(int(x2), int(y2)), 
                     stroke=svgwrite.rgb(0, 0, 0, '%'),
                     stroke_width=2
                 ))
@@ -478,4 +478,4 @@ class TrainingDataGenerator:
     # or integrating with command-line tools (like `mutool` or `inkscape`) might be needed,
     # but extracting vector data reliably from arbitrary architectural PDFs is challenging.
     # For the MVP, the placeholder approach for image generation and element separation is pragmatic,
-    # but acknowledges this deviation from the detailed requirement steps (PDF->SVG->PNG->Separate).        
+    # but acknowledges this deviation from the detailed requirement steps (PDF->SVG->PNG->Separate).                    

@@ -7,11 +7,22 @@ import cv2
 import re
 import numpy as np
 import pytesseract
-import easyocr
-from pdf2image import convert_from_path
-from typing import List, Dict, Tuple, Optional
 import logging
 from pathlib import Path
+from typing import List, Dict, Tuple, Optional
+
+from PIL import Image
+import sys
+import PIL
+if not hasattr(PIL.Image, 'ANTIALIAS'):
+    try:
+        PIL.Image.ANTIALIAS = PIL.Image.Resampling.LANCZOS
+    except:
+        # Fallback
+        PIL.Image.ANTIALIAS = 1  # ANTIALIAS was integer 1 in older Pillow versions
+
+import easyocr
+from pdf2image import convert_from_path
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
