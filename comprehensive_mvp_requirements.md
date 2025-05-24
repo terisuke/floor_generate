@@ -396,7 +396,7 @@ class TrainingDataGenerator:
 
 ## 5. AI学習システム
 
-### 5.1 LoRA学習設定
+### 5.1 LoRA学習設定 ✅
 
 ```python
 # src/training/lora_trainer.py
@@ -408,21 +408,32 @@ class LoRATrainer:
     def __init__(self):
         self.device = "mps" if torch.backends.mps.is_available() else "cpu"
         
-        # Base model
-        self.model_id = "runwayml/stable-diffusion-v2-1"
+        # Base model - using v1-4 which is open access and smaller
+        self.model_id = "CompVis/stable-diffusion-v1-4"
+        
+        # Force CPU mode for testing if no GPU available
+        if self.device == "cpu":
+            print("Running on CPU - using float32 for compatibility")
+            self.dtype = torch.float32
+        else:
+            self.dtype = torch.float16
+            
+        # Load model with appropriate dtype
         self.pipeline = StableDiffusionPipeline.from_pretrained(
             self.model_id,
-            torch_dtype=torch.float16
+            torch_dtype=self.dtype,
+            use_auth_token=False,
+            safety_checker=None,
+            requires_safety_checker=False
         ).to(self.device)
         
-        # LoRA設定
+        # LoRA設定 - 軽量化のためにrankを下げる
         self.lora_config = LoraConfig(
-            r=64,                    # Rank (軽量化)
-            lora_alpha=64,
+            r=32,                    # Rank (軽量化)
+            lora_alpha=32,
             target_modules=[
                 "to_k", "to_q", "to_v", "to_out.0",
                 "proj_in", "proj_out",
-                "ff.net.0.proj", "ff.net.2"
             ],
             lora_dropout=0.1,
         )

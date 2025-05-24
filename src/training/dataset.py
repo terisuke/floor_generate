@@ -99,23 +99,52 @@ class FloorPlanDataset(Dataset):
 
     def generate_prompt(self, metadata):
         """メタデータからプロンプト生成"""
-        # Example prompt generation based on metadata
-        grid_size = metadata.get('site_grid_size', ('N/A', 'N/A'))
-        area = metadata.get('total_area_sqm', 0)
-        rooms = metadata.get('room_count', 'N/A')
-        source_pdf = metadata.get('source_pdf', 'unknown')
-
-        prompt = f"site_size_{grid_size[0]}x{grid_size[1]}, "
-        if area is not None:
-            prompt += f"total_area_{area:.0f}sqm, "
-        prompt += f"rooms_{rooms}, "
-        prompt += f"source_{os.path.splitext(source_pdf)[0].replace('.','_')}, " # Clean up source name for prompt
-        prompt += "japanese_house, 910mm_grid, architectural_plan"
-
-        # Add more details from metadata if available and relevant for conditioning
-        # e.g., style, number of floors, specific room types (if detected)
-
-        return prompt
+        # Example prompt generation based on metadata with robust error handling
+        try:
+            grid_size = metadata.get('site_grid_size', None)
+            if grid_size is None or not isinstance(grid_size, (list, tuple)) or len(grid_size) < 2:
+                grid_size = ('10', '10')  # Default values if missing or invalid
+                
+            area = metadata.get('total_area_sqm', 0)
+            if area is None:
+                area = 100  # Default area
+                
+            rooms = metadata.get('room_count', 'N/A')
+            if rooms is None:
+                rooms = '4'  # Default room count
+                
+            source_pdf = metadata.get('source_pdf', 'unknown')
+            if source_pdf is None:
+                source_pdf = 'unknown'
+                
+            prompt = f"site_size_{grid_size[0]}x{grid_size[1]}, "
+            prompt += f"total_area_{int(area) if isinstance(area, (int, float)) else area}sqm, "
+            prompt += f"rooms_{rooms}, "
+            
+            # Clean up source name for prompt
+            try:
+                source_name = os.path.splitext(source_pdf)[0].replace('.','_')
+            except (AttributeError, IndexError):
+                source_name = 'unknown'
+                
+            prompt += f"source_{source_name}, "
+            prompt += "japanese_house, 910mm_grid, architectural_plan"
+            
+            # Add more details from metadata if available and relevant for conditioning
+            style = metadata.get('style', None)
+            if style:
+                prompt += f", style_{style}"
+                
+            floor_count = metadata.get('floor_count', None)
+            if floor_count:
+                prompt += f", floors_{floor_count}"
+                
+            return prompt
+            
+        except Exception as e:
+            print(f"Error generating prompt from metadata: {e}")
+            print(f"Using default prompt instead. Metadata: {metadata}")
+            return "japanese_house, 910mm_grid, architectural_plan, modern_style"
 
 # Example of a simple transform (optional)
 # from torchvision import transforms
@@ -127,4 +156,4 @@ class FloorPlanDataset(Dataset):
 #          # Apply normalization if needed
 #          # normalize = transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]) # Example for 3 channel image
 #          # image_tensor = normalize(image_tensor)
-#          return image_tensor, mask_tensor 
+#          return image_tensor, mask_tensor   

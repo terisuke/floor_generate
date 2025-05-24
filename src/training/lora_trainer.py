@@ -9,12 +9,15 @@ class LoRATrainer:
     def __init__(self):
         self.device = "mps" if torch.backends.mps.is_available() else "cpu"
 
-        # Base model
-        self.model_id = "runwayml/stable-diffusion-v2-1"
+        # Base model - using v1-4 which is open access and smaller
+        self.model_id = "CompVis/stable-diffusion-v1-4"
         # Load in float32 for MPS compatibility during training, will convert to float16 for inference
         self.pipeline = StableDiffusionPipeline.from_pretrained(
             self.model_id,
-            torch_dtype=torch.float32 # Use float32 for MPS training
+            torch_dtype=torch.float32, # Use float32 for MPS training
+            use_auth_token=False,
+            safety_checker=None,
+            requires_safety_checker=False
         ).to(self.device)
 
         # Disable safety checker
@@ -204,14 +207,62 @@ class LoRATrainer:
         # Need to load the state_dict from the saved weights_path
         if os.path.exists(weights_path):
             print(f"Loading LoRA weights from {weights_path}...")
-            self.unet.load_state_dict(torch.load(os.path.join(weights_path, "adapter_model.safetensors")), strict=False) # Assuming safetensors format
-            # Or if saved with save_pretrained, it might be different.
-            # Let's assume save_pretrained saves the correct format for load_pretrained.
-            self.unet = self.unet.from_pretrained(self.unet, weights_path) # Correct way to load with peft
-
-            print("LoRA weights loaded.")
+            try:
+                from peft import PeftModel
+                self.unet = PeftModel.from_pretrained(
+                    self.unet,
+                    weights_path,
+                    is_trainable=False  # Set to False for inference
+                )
+                print("LoRA weights loaded using PeftModel.from_pretrained.")
+            except Exception as e:
+                print(f"Error loading with from_pretrained: {e}")
+                try:
+                    adapter_path = os.path.join(weights_path, "adapter_model.bin")
+                    if os.path.exists(adapter_path):
+                        self.unet.load_state_dict(torch.load(adapter_path), strict=False)
+                    else:
+                        # Try safetensors format
+                        adapter_path = os.path.join(weights_path, "adapter_model.safetensors")
+                        if os.path.exists(adapter_path):
+                            try:
+                                from safetensors.torch import load_file
+                                state_dict = load_file(adapter_path)
+                                self.unet.load_state_dict(state_dict, strict=False)
+                            except ImportError:
+                                self.unet.load_state_dict(torch.load(adapter_path), strict=False)
+                    print(f"LoRA weights loaded from {adapter_path} using state_dict.")
+                except Exception as e2:
+                    print(f"Failed to load weights with fallback method: {e2}")
+                    raise ValueError(f"Could not load LoRA weights from {weights_path}")
+            print("LoRA weights loaded successfully.")
         else:
             print(f"Warning: LoRA weights not found at {weights_path}")
+            
+    def get_pipeline_for_inference(self):
+        """推論用のパイプラインを取得"""
+        self.unet.eval()
+        
+        from diffusers import StableDiffusionPipeline
+        
+        if self.device == "cpu":
+            dtype = torch.float32
+        else:
+            dtype = torch.float16
+            
+        pipeline = StableDiffusionPipeline.from_pretrained(
+            self.model_id,
+            unet=self.unet,
+            torch_dtype=dtype,
+            use_auth_token=False,
+            safety_checker=None,
+            requires_safety_checker=False
+        ).to(self.device)
+        
+        # Disable safety checker to save memory
+        pipeline.safety_checker = None
+        
+        return pipeline
 
 
 # Helper function for demonstration (optional)
@@ -222,4 +273,4 @@ class LoRATrainer:
 #     # Need a dummy DataLoader for training or remove the __main__ block
 #     # trainer.train(dummy_dataloader, num_epochs=1)
 #     # Need a dummy site_mask and prompt for inference or remove the method
-#     # trainer.inference(dummy_mask, "a test house") 
+#     # trainer.inference(dummy_mask, "a test house")     
