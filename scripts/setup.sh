@@ -64,7 +64,7 @@ easyocr==1.7.0
 ortools==9.8.3296
 streamlit==1.28.0
 pandas==2.1.3
-numpy>=2.0.0
+numpy==1.24.4
 # freecad # This is problematic as a pip install for the app. Assume system install for FreeCAD app.
 # Python bindings for FreeCAD might be installed differently or bundled.
 EOF
@@ -78,4 +78,4 @@ echo "Consider running: pip install -r $REQUIREMENTS_FILE after activating the v
 echo "\nIMPORTANT: FreeCAD application (version 0.22 or as per requirements) should be installed separately."
 echo "The FreeCAD Python bindings might need specific setup depending on your FreeCAD installation method."
 
-echo "\nSetup script finished. Please activate the virtual environment and install Python packages."      
+echo "\nSetup script finished. Please activate the virtual environment and install Python packages."        
