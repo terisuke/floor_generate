@@ -201,7 +201,14 @@ python scripts/train_and_display.py --data-dir data/custom_training
   - [x] huggingface_hub、diffusers、transformersの互換性修正
   - [x] HF_HUB_CACHE属性エラーの解決
   - [x] パッチスクリプトの実装
+- [ ] エンドツーエンドテスト
+  - [ ] トレーニングからStreamlit表示までの完全なパイプラインテスト
+  - [ ] 異なる入力条件でのテスト
+  - [ ] エラー回復メカニズムのテスト
 - [ ] パフォーマンス最適化
+  - [ ] 推論パイプラインの高速化（目標: 5秒以下）
+  - [ ] メモリ使用量の最適化
+  - [ ] UI/UX改善
 
 ## 🔧 トラブルシューティング
 
