@@ -71,15 +71,44 @@ graph TD
 
 ### **4. 主要技術スタックと開発環境**
 * **プログラミング言語**: Python 3.11 [cite: 1, 2]。
-* **AIフレームワーク**: PyTorch (2.3.1.dev* 等、M4 Max MPS対応の最新ナイトリー版推奨) [cite: 2]。
-* **画像生成モデル**: Diffusersライブラリ経由のStable Diffusion + LoRA (PEFTライブラリ) [cite: 2]。
+* **AIフレームワーク**: PyTorch (2.3.0 等、M4 Max MPS対応版) [cite: 2]。
+* **画像生成モデル**: 以下の互換性確認済みバージョンを使用 [cite: 2]：
+  * diffusers==0.19.3
+  * transformers==4.31.0
+  * huggingface_hub==0.16.4
+  * peft==0.4.0
+  * tokenizers==0.13.3
+* **互換性パッチ**: patch_diffusers.py (HF_HUB_CACHE属性エラー対応) [cite: 2]。
 * **OCR**: PaddleOCR (日本語対応)、PaddlePaddle [cite: 1]。
-* **画像処理**: OpenCV, Pillow [cite: 2]。
-* **UI**: Streamlit [cite: 2]。
+* **画像処理**: OpenCV==4.8.1.78, Pillow>=10.1.0 [cite: 2]。
+* **UI**: Streamlit>=1.28.0 [cite: 2]。
 * **CAD連携**: FreeCAD 0.22 (Python API利用、公式AppImage/バンドル推奨) [cite: 2]。
 * **対象ハードウェア**: MacBook Pro (M4 Max), Ubuntu 22.04 [cite: 1, 2]。
 
-### **5. MVPにおける非目標（スコープ外）**
+### **5. 現在の進捗**
+
+* **実装済み機能**:
+  * [x] プロジェクト構造の作成
+  * [x] PDF寸法・特徴抽出モジュール (PaddleOCRベース)
+  * [x] グリッド正規化システム
+  * [x] 学習データペア生成パイプライン基盤（半自動化、壁情報中心）
+  * [x] AIモデル学習システム骨格 (Stable Diffusion + LoRA)
+  * [x] 基本的な制約チェック骨格 (ルールベース優先)
+  * [x] FreeCAD連携骨格 (壁の3D押し出し、SVG出力)
+  * [x] Streamlit UI実装骨格
+  * [x] `scripts/` を活用した開発・テストパイプライン整備
+  * [x] **依存関係の互換性問題解決**:
+    * 互換性のあるパッケージバージョンの特定と検証
+    * `patch_diffusers.py` スクリプトの実装（HF_HUB_CACHE属性エラー対応）
+    * 主要ファイルへのパッチ適用（`src/training/lora_trainer.py`, `src/inference/generator.py`）
+
+* **進行中の作業**:
+  * [ ] データ前処理パイプラインの安定化と少量データでの実証
+  * [ ] AIモデルの学習と基本的な平面図（壁構造）生成の検証
+  * [ ] 生成プランからFreeCADモデルとSVG出力の確認
+  * [ ] UIからの入力と生成結果表示のE2E動作確認
+
+### **6. MVPにおける非目標（スコープ外）**
 * 多様なPDF形式からの全建築要素（窓、ドア、設備記号、複雑な部屋形状等）の完全自動かつ高精度な抽出・正規化。MVPでは壁情報を優先し、他は簡略化または手動補完を許容する。
 * 高品質で詳細なフォトリアリスティック3Dモデルの自動生成。MVPでは基本的な壁の押し出しに留める。
 * FreeCAD上での高度なパラメトリック編集機能の完全実装。

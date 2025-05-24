@@ -1,3 +1,6 @@
+import patch_diffusers
+patch_diffusers.apply_patches()
+
 import torch
 import numpy as np
 from PIL import Image
