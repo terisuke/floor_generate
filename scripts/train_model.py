@@ -11,6 +11,9 @@ src_dir = os.path.abspath(os.path.join(current_dir, "..", "src"))
 if src_dir not in sys.path:
     sys.path.insert(0, src_dir)
 
+import patch_diffusers
+patch_diffusers.apply_patches()
+
 from training.dataset import FloorPlanDataset
 from training.lora_trainer import LoRATrainer
 
@@ -107,4 +110,4 @@ def main():
         traceback.print_exc()
 
 if __name__ == "__main__":
-    main()      
+    main()            

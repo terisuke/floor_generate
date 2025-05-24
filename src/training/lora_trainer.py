@@ -1,3 +1,6 @@
+import patch_diffusers
+patch_diffusers.apply_patches()
+
 from diffusers import StableDiffusionPipeline, DDPMScheduler
 from peft import LoraConfig, get_peft_model
 import torch
@@ -280,4 +283,4 @@ class LoRATrainer:
 #     # Need a dummy DataLoader for training or remove the __main__ block
 #     # trainer.train(dummy_dataloader, num_epochs=1)
 #     # Need a dummy site_mask and prompt for inference or remove the method
-#     # trainer.inference(dummy_mask, "a test house")          
+#     # trainer.inference(dummy_mask, "a test house")                    

@@ -48,10 +48,12 @@ if [ ! -f "$REQUIREMENTS_FILE" ]; then
 torch==2.3.0
 torchvision
 torchaudio
-diffusers==0.27.0
-transformers==4.36.0
+diffusers==0.19.3
+transformers==4.31.0
+huggingface_hub==0.16.4
+tokenizers==0.13.3
 accelerate==0.25.0
-peft==0.7.1
+peft==0.4.0
 opencv-python==4.8.1.78
 Pillow==10.1.0
 svgwrite==1.4.3
@@ -78,4 +80,4 @@ echo "Consider running: pip install -r $REQUIREMENTS_FILE after activating the v
 echo "\nIMPORTANT: FreeCAD application (version 0.22 or as per requirements) should be installed separately."
 echo "The FreeCAD Python bindings might need specific setup depending on your FreeCAD installation method."
 
-echo "\nSetup script finished. Please activate the virtual environment and install Python packages."                    
+echo "\nSetup script finished. Please activate the virtual environment and install Python packages."                                        
