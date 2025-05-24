@@ -200,7 +200,7 @@ class FloorPlanApp:
             st.session_state.generated = True
             status_text.success("✅ 生成完了！")
             # Force rerun to display results outside the generate_btn block
-            st.experimental_rerun()
+            st.rerun()
 
         except Exception as e:
             st.error(f"生成エラー: {str(e)}")
@@ -212,9 +212,10 @@ class FloorPlanApp:
     def analyze_plan(self, plan_image):
         """Placeholder for analyzing plan details."""
         # In a real app, this would extract room areas, counts, etc.
+        metadata = getattr(st.session_state, 'metadata', {})
         return {
-            "estimated_rooms": metadata.get('room_count',"N/A") if 'metadata' in st.session_state else "N/A",
-            "total_area_sqm": metadata.get('total_area_sqm', "N/A") if 'metadata' in st.session_state else "N/A",
+            "estimated_rooms": metadata.get('room_count',"N/A"),
+            "total_area_sqm": metadata.get('total_area_sqm', "N/A"),
             "warnings": ["placeholder: room sizes might be off", "placeholder: circulation not fully checked"]
         }
 
@@ -299,4 +300,4 @@ if __name__ == "__main__":
     os.makedirs("outputs/freecad", exist_ok=True)
     
     app = FloorPlanApp()
-    app.run() 
+    app.run()    
