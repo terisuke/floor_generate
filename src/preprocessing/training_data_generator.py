@@ -2,88 +2,153 @@ import cv2
 import numpy as np
 import json
 import os
+import tempfile
 from glob import glob
+from pathlib import Path
+import logging
 from src.preprocessing.dimension_extractor import DimensionExtractor
 from src.preprocessing.grid_normalizer import GridNormalizer
 import svgwrite
 from svglib.svglib import svg2rlg
 from reportlab.graphics import renderPM
+from pdf2image import convert_from_path
+import pytesseract
+from PIL import Image, ImageDraw
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 class TrainingDataGenerator:
+    """Generate training data pairs from architectural PDF drawings"""
+    
     def __init__(self, target_size=(256, 256)):
+        """
+        Initialize training data generator
+        
+        Args:
+            target_size: Target image size (width, height) in pixels
+        """
         self.target_size = target_size
         self.extractor = DimensionExtractor()
         self.normalizer = GridNormalizer()
+        
+        self.wall_thickness = 4
+        
+        self.opening_size = 8
 
     def process_pdf_collection(self, pdf_dir, output_dir):
-        """1000枚のPDF集を学習データに変換"""
-
+        """
+        Process a collection of PDF floor plans to generate training data
+        
+        Args:
+            pdf_dir: Directory containing PDF files
+            output_dir: Directory to save training data pairs
+            
+        Returns:
+            Number of successfully processed files
+        """
+        logger.info(f"Processing PDF collection from {pdf_dir}")
+        
         pdf_files = glob(f"{pdf_dir}/*.pdf")
-        print(f"Processing {len(pdf_files)} PDF files...")
-
+        logger.info(f"Found {len(pdf_files)} PDF files")
+        
         os.makedirs(output_dir, exist_ok=True)
-
+        
         successful = 0
         for i, pdf_path in enumerate(pdf_files):
             try:
-                print(f"[{i+1}/{len(pdf_files)}] {pdf_path}")
-
-                # 1. 寸法抽出
-                dimensions = self.extractor.extract_from_pdf(pdf_path)
-
-                # 2. グリッド正規化
-                normalized = self.normalizer.normalize_dimensions(dimensions)
-
-                # 3. PDF→SVG変換 (Placeholder - need a library for this or manual implementation)
-                # For now, let's assume we have a way to get an SVG representation or work directly from processed image.
-                # Let's simulate getting a grid image based on dimensions and a hypothetical plan structure.
-                # In a real scenario, this would involve converting the PDF geometry to SVG.
+                logger.info(f"[{i+1}/{len(pdf_files)}] Processing {pdf_path}")
                 
-                # Since direct PDF to SVG conversion for architectural plans with exact geometry is complex,
-                # and the requirement mentions SVG->PNG conversion, let's focus on creating the grid image
-                # and separated layers based on the *extracted* and *normalized* dimensions and a hypothetical plan.
-                # The plan image generation is done by the AI later. Here, we prepare the *training* data,
-                # which is pairs of site masks (condition) and actual simplified floor plans (target).
-
-                # For training data, we need the ground truth floor plan image.
-                # The requirement says "SVG->PNG変換" and then "建築要素分離". This implies we get an SVG
-                # from the original PDF, convert it to a grid image, and then separate elements.
-                # Let's assume a function `pdf_to_grid_image` exists that converts the PDF geometry
-                # into our target grid format (e.g., 256x256 binary image where white is empty, black is wall/element).
-                # This part is complex and needs a dedicated geometric processing library.
-                # As a simplified approach for MVP training data generation, let's assume we have
-                # simplified ground truth images available or can generate them from a simplified representation.
-                # However, the requirements clearly state PDF->SVG->PNG process for training data.
-                # Let's add placeholder methods for this.
-
-                # 3. PDF→グリッド画像変換 (Simplified Placeholder)
-                grid_image = self.pdf_to_grid_image_placeholder(pdf_path, normalized)
-
-                # 4. 建築要素分離
+                # 1. Extract dimensions from PDF
+                dimensions = self.extractor.extract_from_pdf(pdf_path)
+                if not dimensions:
+                    logger.warning(f"No dimensions extracted from {pdf_path}")
+                    continue
+                    
+                logger.info(f"Extracted {len(dimensions)} dimensions")
+                
+                normalized = self.normalizer.normalize_dimensions(dimensions)
+                logger.info(f"Normalized {len(normalized)} dimensions")
+                
+                svg_path = self.pdf_to_svg(pdf_path)
+                logger.info(f"Converted PDF to SVG: {svg_path}")
+                
+                # 4. Convert SVG to grid image
+                grid_image = self.svg_to_grid_image(svg_path, normalized)
+                logger.info(f"Converted SVG to grid image of size {grid_image.shape}")
+                
                 channels = self.separate_elements(grid_image)
-
-                # 5. 敷地マスク生成
+                logger.info(f"Separated elements into {channels.shape[2]} channels")
+                
                 site_mask = self.create_site_mask(normalized)
-
-                # 6. メタデータ
+                logger.info(f"Created site mask of size {site_mask.shape}")
+                
                 metadata = self.create_metadata(normalized, channels, pdf_path)
-
-                # 7. 保存
-                self.save_training_pair(
-                    site_mask, channels, metadata,
-                    f"{output_dir}/pair_{i:04d}"
-                )
-
+                
+                pair_dir = f"{output_dir}/pair_{i:04d}"
+                self.save_training_pair(site_mask, channels, metadata, pair_dir)
+                logger.info(f"Saved training pair to {pair_dir}")
+                
                 successful += 1
-
+                
             except Exception as e:
-                print(f"Error processing {pdf_path}: {e}")
+                logger.error(f"Error processing {pdf_path}: {e}")
                 import traceback
                 traceback.print_exc()
                 continue
-
-        print(f"Successfully processed: {successful}/{len(pdf_files)} files")
+        
+        logger.info(f"Successfully processed {successful}/{len(pdf_files)} files")
         return successful
+        
+    def pdf_to_svg(self, pdf_path):
+        """
+        Convert PDF to SVG format
+        
+        Args:
+            pdf_path: Path to PDF file
+            
+        Returns:
+            Path to generated SVG file
+        """
+        svg_path = os.path.join(
+            tempfile.gettempdir(), 
+            f"{Path(pdf_path).stem}.svg"
+        )
+        
+        images = convert_from_path(pdf_path, dpi=300)
+        
+        if not images:
+            raise ValueError(f"Failed to convert PDF to image: {pdf_path}")
+            
+        img = images[0]
+        
+        dwg = svgwrite.Drawing(svg_path, size=(img.width, img.height))
+        
+        img_array = np.array(img)
+        
+        gray = cv2.cvtColor(img_array, cv2.COLOR_RGB2GRAY)
+        edges = cv2.Canny(gray, 50, 150, apertureSize=3)
+        
+        lines = cv2.HoughLinesP(
+            edges, 1, np.pi/180, 
+            threshold=100, 
+            minLineLength=100, 
+            maxLineGap=10
+        )
+        
+        if lines is not None:
+            for line in lines:
+                x1, y1, x2, y2 = line[0]
+                dwg.add(dwg.line(
+                    start=(x1, y1), 
+                    end=(x2, y2), 
+                    stroke=svgwrite.rgb(0, 0, 0, '%'),
+                    stroke_width=2
+                ))
+        
+        dwg.save()
+        
+        return svg_path
     
     # --- Placeholder methods to simulate required steps ---
 
@@ -321,10 +386,96 @@ class TrainingDataGenerator:
     # The placeholder simplifies this by attempting to go directly from PDF path/dimensions to grid image,
     # but acknowledges the complexity and defers a proper implementation.
     # The `separate_elements` placeholder takes a `grid_image` and produces channels.
+    
+    def svg_to_grid_image(self, svg_path, normalized):
+        """
+        Convert SVG to grid-normalized image
+        
+        Args:
+            svg_path: Path to SVG file
+            normalized: Normalized dimensions
+            
+        Returns:
+            Grid-normalized image as numpy array
+        """
+        logger.info(f"Converting SVG to grid image: {svg_path}")
+        
+        try:
+            drawing = svg2rlg(svg_path)
+            if not drawing:
+                raise ValueError(f"Failed to load SVG: {svg_path}")
+                
+            pil_img = renderPM.drawToPIL(drawing)
+            
+            img_array = np.array(pil_img)
+            
+        except Exception as e:
+            logger.warning(f"Error converting SVG to image: {e}")
+            return self.pdf_to_grid_image_placeholder("", normalized)
+        
+        # Get site dimensions from normalized dimensions
+        site_dims = [d for d in normalized if d['type'] == 'area']
+        
+        if not site_dims:
+            # If no area dimensions, try to find the largest linear dimensions
+            linear_dims = sorted(
+                [d for d in normalized if d['type'] == 'linear'],
+                key=lambda x: x['original'],
+                reverse=True
+            )
+            
+            if len(linear_dims) >= 2:
+                width = linear_dims[0]['normalized_mm']
+                depth = linear_dims[1]['normalized_mm']
+            else:
+                # Default to a standard size if we can't extract dimensions
+                width, depth = 10920, 10920  # 12x12 grid units (910mm each)
+        else:
+            width = site_dims[0]['original'][0]
+            depth = site_dims[0]['original'][1]
+        
+        width_grid = round(width / 910)
+        depth_grid = round(depth / 910)
+        
+        # Calculate pixels per grid
+        pixels_per_grid = min(
+            self.target_size[0] // max(width_grid, 1),
+            self.target_size[1] // max(depth_grid, 1)
+        )
+        
+        grid_width = width_grid * pixels_per_grid
+        grid_height = depth_grid * pixels_per_grid
+        
+        grid_width = min(grid_width, self.target_size[0])
+        grid_height = min(grid_height, self.target_size[1])
+        
+        if len(img_array.shape) == 3:
+            img_gray = cv2.cvtColor(img_array, cv2.COLOR_RGB2GRAY)
+        else:
+            img_gray = img_array
+            
+        resized = cv2.resize(img_gray, (grid_width, grid_height))
+        
+        grid_image = np.ones(self.target_size, dtype=np.uint8) * 255
+        
+        # Center the resized image in the target image
+        x_offset = (self.target_size[0] - grid_width) // 2
+        y_offset = (self.target_size[1] - grid_height) // 2
+        
+        grid_image[
+            y_offset:y_offset+grid_height, 
+            x_offset:x_offset+grid_width
+        ] = resized
+        
+        _, binary = cv2.threshold(grid_image, 200, 255, cv2.THRESH_BINARY)
+        
+        binary = 255 - binary
+        
+        return binary
 
     # The requirement document also mentions `pdf_to_svg`. This is a key missing piece
     # for a proper implementation of the training data pipeline. Libraries like `pypdf`, `PyMuPDF` (fitz),
     # or integrating with command-line tools (like `mutool` or `inkscape`) might be needed,
     # but extracting vector data reliably from arbitrary architectural PDFs is challenging.
     # For the MVP, the placeholder approach for image generation and element separation is pragmatic,
-    # but acknowledges this deviation from the detailed requirement steps (PDF->SVG->PNG->Separate). 
+    # but acknowledges this deviation from the detailed requirement steps (PDF->SVG->PNG->Separate).        
