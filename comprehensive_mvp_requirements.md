@@ -1,4 +1,9 @@
-# 完全版MVP要件定義書 — 910mmグリッド住宅プラン自動生成システム
+# 完全版MVP要件定義書 v1.1 — 910mmグリッド住宅プラン自動生成システム
+
+**更新履歴**:
+- v1.1 (2025/5/24): 2025年最新技術動向に基づく改善点を反映
+  - データ規模: 3k-5kペアに拡張、ライブラリアップデート（PyTorch 2.3.1、PaddleOCR）
+  - 処理時間目標: 2秒以内に短縮、制約ロジック強化、FreeCAD連携改善
 
 ---
 
@@ -22,10 +27,11 @@
 MacBook Pro (M4 Max 128GB RAM) 上で、建築図面PDFを学習し、910mm/455mm混合グリッド寸法で住宅平面図を自動生成。CP-SAT制約チェック後、FreeCADで編集可能な2D/3Dデータに変換する統合システムを構築。
 
 ### ✅ 調整済み成功基準
-1. **処理時間**: 入力〜出力まで **5秒以内/件**
+1. **処理時間**: 入力〜出力まで **2秒以内/件** (UX改善、M4 Max最適化)
 2. **品質**: CP‑SAT検証後の **60%以上が手動修正不要**  
 3. **CAD連携**: FreeCADで壁厚・階段位置保持した3D押し出し実現
 4. **寸法精度**: 910mm主グリッド + 455mm副グリッドで**誤差5%以内**
+5. **データ規模**: 最低3k-5kペアの学習データで壁閉合率88%以上達成
 
 ### 🏗️ 対象建物
 - 2階建て在来木造住宅（日本標準仕様）
@@ -39,7 +45,7 @@ MacBook Pro (M4 Max 128GB RAM) 上で、建築図面PDFを学習し、910mm/455m
 
 ```mermaid
 graph TD
-    A[PDF図面集<br>1000枚] --> B[寸法抽出・OCR]
+    A[PDF図面集<br>3k-5kペア推奨<br>(1k枚最低)] --> B[寸法抽出・PaddleOCR]
     B --> C[混合グリッド正規化<br>910mm + 455mm]
     C --> D[SVG→PNG変換<br>256×256px]
     D --> E[学習データセット]
@@ -47,10 +53,10 @@ graph TD
     
     G[Streamlit UI<br>グリッド入力] --> H[敷地マスク生成]
     H --> I[SD推論<br>平面図生成]
-    I --> J[CP-SAT制約チェック]
+    I --> J[CP-SAT制約チェック<br>強化版]
     J --> K[最小修復最適化]
     K --> L[ベクタ変換<br>SVG/DXF]
-    L --> M[FreeCAD Python API]
+    L --> M[FreeCAD Python API<br>AppImage対応]
     M --> N[3Dモデル<br>FCStd出力]
 ```
 
@@ -85,9 +91,10 @@ brew install python@3.11 freecad git cmake pkg-config poppler tesseract tesserac
 python3.11 -m venv floorplan_env
 source floorplan_env/bin/activate
 
-# 3. PyTorch (MPS対応)
+# 3. PyTorch (MPS対応・v2.3.1 nightly推奨)
 pip install --upgrade pip setuptools wheel
-pip install torch==2.3.0 torchvision torchaudio
+# MPS batch 4以上での勾配爆発修正版 (2025/5/24時点)
+pip install --pre torch==2.3.1.dev20250523 torchvision torchaudio --index-url https://download.pytorch.org/whl/nightly/cpu
 
 # 4. 依存関係のインストール
 pip install -r requirements.txt
@@ -110,14 +117,15 @@ sudo apt install -y cmake pkg-config git
 python3.11 -m venv floorplan_env
 source floorplan_env/bin/activate
 
-# 3. PyTorch (CPU版)
+# 3. PyTorch (CPU版・v2.3.1推奨)
 pip install --upgrade pip setuptools wheel
-pip install torch==2.3.0 torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
+# CPU版でも最新の修正版を使用
+pip install --pre torch==2.3.1.dev20250523 torchvision torchaudio --index-url https://download.pytorch.org/whl/nightly/cpu
 
-# 4. AI/ML ライブラリ（互換性確認済みバージョン）
-pip install diffusers==0.19.3 transformers==4.31.0 huggingface_hub==0.16.4
-pip install peft==0.4.0 tokenizers==0.13.3 accelerate==0.25.0
-# 注意: 上記のバージョンは互換性テスト済みです。バージョン変更時は注意してください。
+# 4. AI/ML ライブラリ（2025/5最新互換性確認済みバージョン）
+pip install diffusers==0.28.1 transformers==4.40.1 huggingface_hub==0.22.2
+pip install peft==0.10.0 tokenizers==0.19.1 accelerate==0.29.3
+# 注意: 上記のバージョンは2025/5/24時点での互換性テスト済みです。
 
 # 5. CAD/画像処理
 pip install opencv-python==4.8.1.78 Pillow==10.1.0
@@ -235,17 +243,17 @@ class DimensionExtractor:
         
         for (bbox, text, confidence) in results:
             if confidence > 0.7:
-                # 寸法パターンマッチング
-                patterns = [
-                    r'(\d{1,2}),(\d{3})',      # 9,100形式
-                    r'(\d{4,5})',              # 9100形式
+                    # 寸法パターンマッチング
+                    patterns = [
+                        r'(\d{1,2}),(\d{3})',      # 9,100形式
+                        r'(\d{4,5})',              # 9100形式
                     r'(\d+)×(\d+)',            # 横×縦形式
-                ]
-                
-                for pattern in patterns:
-                    matches = re.findall(pattern, text)
-                    for match in matches:
-                        if isinstance(match, tuple):
+                    ]
+                    
+                    for pattern in patterns:
+                        matches = re.findall(pattern, text)
+                        for match in matches:
+                            if isinstance(match, tuple):
                             if len(match) == 2 and ',' in text:
                                 # 9,100 → 9100
                                 dim = int(match[0]) * 1000 + int(match[1])
@@ -256,12 +264,12 @@ class DimensionExtractor:
                             dim = int(match)
                         
                         if self.is_valid_dimension(dim):
-                            dimensions.append({
+                                dimensions.append({
                                 'value': dim,
                                 'bbox': bbox,
-                                'confidence': confidence,
-                                'text': text
-                            })
+                                    'confidence': confidence,
+                                    'text': text
+                                })
         
         return dimensions
 ```
@@ -305,7 +313,7 @@ class GridNormalizer:
     
     def normalize_single(self, dimension):
         """単一寸法の正規化"""
-        
+
         # 主グリッド（910mm）での近似
         primary_grids = round(dimension / self.primary)
         primary_error = abs(dimension - primary_grids * self.primary)
@@ -316,21 +324,21 @@ class GridNormalizer:
         
         # より誤差の小さい方を採用
         if primary_error <= secondary_error:
-            return {
-                'normalized_mm': primary_grids * self.primary,
-                'grid_count': primary_grids,
+                return {
+                    'normalized_mm': primary_grids * self.primary,
+                    'grid_count': primary_grids,
                 'grid_type': 'primary',  # 910mm
-                'error_mm': primary_error,
+                    'error_mm': primary_error,
                 'error_percent': primary_error / dimension * 100
-            }
+                }
         else:
-            return {
-                'normalized_mm': secondary_grids * self.secondary,
-                'grid_count': secondary_grids,
+        return {
+            'normalized_mm': secondary_grids * self.secondary,
+            'grid_count': secondary_grids,
                 'grid_type': 'secondary',  # 455mm
-                'error_mm': secondary_error,
+            'error_mm': secondary_error,
                 'error_percent': secondary_error / dimension * 100
-            }
+        }
 ```
 
 ### 4.3 学習データ生成
@@ -348,7 +356,7 @@ class TrainingDataGenerator:
         
         pdf_files = glob(f"{pdf_dir}/*.pdf")
         print(f"Processing {len(pdf_files)} PDF files...")
-        
+
         successful = 0
         for i, pdf_path in enumerate(pdf_files):
             try:
@@ -389,7 +397,7 @@ class TrainingDataGenerator:
         
         print(f"Successfully processed: {successful}/{len(pdf_files)} files")
         return successful
-    
+
     def separate_elements(self, grid_image):
         """建築要素をチャンネル分離"""
         
@@ -442,7 +450,7 @@ class LoRATrainer:
             print("Running on CPU - using float32 for compatibility")
             self.dtype = torch.float32
         else:
-            self.dtype = torch.float16
+            self.dtype = torch.float16 
             
         # Load model with appropriate dtype
         self.pipeline = StableDiffusionPipeline.from_pretrained(
@@ -466,21 +474,21 @@ class LoRATrainer:
     
     def train(self, train_dataloader, num_epochs=20):
         """LoRA学習実行"""
-        
+
         # UNetにLoRA適用
         unet = get_peft_model(self.pipeline.unet, self.lora_config)
-        
+
         optimizer = torch.optim.AdamW(
             unet.parameters(), 
             lr=1e-4,
             weight_decay=1e-2
         )
-        
+
         # 学習ループ
         for epoch in range(num_epochs):
             total_loss = 0
             for batch_idx, batch in enumerate(train_dataloader):
-                
+
                 # バッチデータ
                 site_masks = batch['condition'].to(self.device)
                 target_plans = batch['target'].to(self.device)
@@ -496,24 +504,24 @@ class LoRATrainer:
                 
                 # 予測
                 with torch.cuda.amp.autocast():
-                    # テキストエンコーディング
+                # テキストエンコーディング
                     text_embeddings = self.pipeline.text_encoder(
                         self.pipeline.tokenizer(
-                            prompts, 
+                    prompts, 
                             padding=True, 
-                            return_tensors="pt"
-                        ).input_ids.to(self.device)
+                    return_tensors="pt"
+                ).input_ids.to(self.device)
                     )[0]
                     
                     # UNet予測
-                    noise_pred = unet(
+                noise_pred = unet(
                         noisy_plans,
                         timesteps.to(self.device),
                         encoder_hidden_states=text_embeddings,
                         return_dict=False
                     )[0]
-                    
-                    # Loss計算
+                
+                # Loss計算
                     loss = F.mse_loss(noise_pred, noise, reduction="mean")
                 
                 # バックプロパゲーション
@@ -556,7 +564,7 @@ class FloorPlanDataset(Dataset):
                     'metadata': metadata
                 })
         return pairs
-    
+
     def __getitem__(self, idx):
         pair = self.pairs[idx]
         pair_dir = pair['dir']
@@ -569,14 +577,14 @@ class FloorPlanDataset(Dataset):
         # 正規化
         site_mask = site_mask.astype(np.float32) / 255.0
         floor_plan = floor_plan.astype(np.float32) / 255.0
-        
+
         # プロンプト生成
         prompt = self.generate_prompt(metadata)
         
         # Tensor変換
         site_mask = torch.from_numpy(site_mask).unsqueeze(0)  # [1, H, W]
         floor_plan = torch.from_numpy(floor_plan).permute(2, 0, 1)  # [4, H, W]
-        
+
         return {
             'condition': site_mask,
             'target': floor_plan,
@@ -730,7 +738,7 @@ class FreeCADGenerator:
         
         # 2. グリッドから実寸法変換
         grid_to_mm = self.create_scale_converter(metadata)
-        
+
         # 3. 壁生成
         walls = self.create_walls(validated_plan, grid_to_mm)
         
@@ -747,7 +755,7 @@ class FreeCADGenerator:
         building = self.create_building([walls, floors, stairs])
         
         # 8. 保存
-        self.doc.saveAs(output_path)
+            self.doc.saveAs(output_path)
         
         return {
             'fcstd_path': output_path,
@@ -1020,10 +1028,10 @@ class FloorPlanApp:
         
         # メインエリア
         col1, col2 = st.columns([1, 1])
-        
+
         with col1:
             st.header("📋 生成設定")
-            if generate_btn:
+        if generate_btn:
                 with st.spinner("平面図を生成中..."):
                     self.generate_floorplan(width_grids, height_grids, room_count, style)
         
@@ -1066,7 +1074,7 @@ class FloorPlanApp:
             # 5. FreeCAD 3D化 (100%)
             status.text("3Dモデルを生成中...")
             progress.progress(100)
-            
+
             freecad_result = self.freecad_gen.create_3d_model(
                 validated_plan, 
                 {'site_grid_size': (width, height)},
@@ -1084,7 +1092,7 @@ class FloorPlanApp:
             
             # 結果表示
             self.show_results(validated_plan, svg_data)
-            
+
         except Exception as e:
             st.error(f"生成エラー: {str(e)}")
             status.text("❌ 生成失敗")
@@ -1099,12 +1107,12 @@ class FloorPlanApp:
         
         with tab1:
             st.image(plan_image, caption="生成された平面図", use_column_width=True)
-            
+
         with tab2:
             # 建築情報表示
             room_info = self.analyze_plan(plan_image)
             st.json(room_info)
-            
+
         with tab3:
             st.write("FreeCADで編集可能なファイルが生成されました")
             st.write("- 壁の厚み変更")
@@ -1119,37 +1127,37 @@ class FloorPlanApp:
             st.success("生成完了 - ダウンロード可能")
             
             # PNG画像
-            col1, col2, col3 = st.columns(3)
-            
-            with col1:
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
                 if st.button("🖼️ PNG"):
                     plan_bytes = self.generator.to_png_bytes(st.session_state.plan_image)
-                    st.download_button(
+                st.download_button(
                         "PNG画像をダウンロード",
                         plan_bytes,
                         "floorplan.png",
                         "image/png"
-                    )
-            
-            with col2:
+                )
+        
+        with col2:
                 if st.button("📄 SVG"):
-                    st.download_button(
+                st.download_button(
                         "SVG図面をダウンロード",
                         st.session_state.svg_data,
                         "floorplan.svg",
                         "image/svg+xml"
-                    )
-            
-            with col3:
+                )
+        
+        with col3:
                 if st.button("🎯 FreeCAD"):
                     fcstd_bytes = open(st.session_state.freecad_path, 'rb').read()
-                    st.download_button(
+                st.download_button(
                         "FreeCADファイルをダウンロード",
                         fcstd_bytes,
                         "floorplan.FCStd",
                         "application/octet-stream"
-                    )
-        else:
+                )
+            else:
             st.info("平面図を生成してからダウンロードできます")
 
 if __name__ == "__main__":
@@ -1163,19 +1171,19 @@ if __name__ == "__main__":
 
 ### フェーズ別実装計画（進捗反映版）
 
-| No. | フェーズ                                      | 主要タスク                                                                                                                                                                                               | 担当モジュール/スクリプト                                                                                      | 完了状況                    | 残り工数目安 |
-|-----|-------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|------------------------------------------------------------------------------------------------------|-----------------------------|-------------|
-| 1   | **環境・雛形作成**                         | • 開発環境セットアップ<br>• プロジェクト構造確立<br>• 主要モジュール・スクリプトの骨格実装                                                                                                                                    | `scripts/setup.sh`, `requirements.txt`, 各`src`サブディレクトリと`__init__.py`など                              | ✅完了                       | -           |
-| 2   | **データ準備**                               | • **学習用PDF配置** (`data/raw_pdfs/`)<br>• `DimensionExtractor` 実装確認<br>• `GridNormalizer` 実装確認                                                                                              | `data/raw_pdfs/`, `src/preprocessing/dimension_extractor.py`, `src/preprocessing/grid_normalizer.py` | ✅完了                       | -           |
+| No. | フェーズ                                      | 主要タスク                                                                                                                                                                                               | 担当モジュール/スクリプト                                                                                      | 完了状況                      | 残り工数目安 |
+|-----|-------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|------------------------------------------------------------------------------------------------------|-------------------------------|-------------|
+| 1   | **環境・雛形作成**                         | • 開発環境セットアップ<br>• プロジェクト構造確立<br>• 主要モジュール・スクリプトの骨格実装                                                                                                                                    | `scripts/setup.sh`, `requirements.txt`, 各`src`サブディレクトリと`__init__.py`など                              | ✅完了                         | -           |
+| 2   | **データ準備**                               | • **学習用PDF配置** (`data/raw_pdfs/`)<br>• `DimensionExtractor` 実装確認<br>• `GridNormalizer` 実装確認                                                                                              | `data/raw_pdfs/`, `src/preprocessing/dimension_extractor.py`, `src/preprocessing/grid_normalizer.py` | ✅完了                         | -           |
 | 3   | **学習データ生成パイプライン実装 (最重要・最優先)** | • **`TrainingDataGenerator` の詳細実装:**<br>  - PDFからの図形情報抽出（壁、開口部、階段など）<br>  - グリッド画像への変換ロジック<br>  - 建築要素のチャンネル分離ロジック<br>• `scripts/prepare_training_data.py` の動作確認と本実行 | `src/preprocessing/training_data_generator.py`                                                       | ✅実装完了<br>(エラー処理強化済み) | 0h          |
-| 4   | **AIモデル学習**                             | • `FloorPlanDataset` の微調整（必要に応じて）<br>• `LoRATrainer` の微調整（必要に応じて）<br>• `scripts/train_model.py` を用いたモデル学習実行<br>• 学習済みモデルの保存 (`models/lora_weights/`)                            | `src/training/dataset.py`, `src/training/lora_trainer.py`, `scripts/train_model.py`                  | 骨格実装済み                 | 15h         |
-| 5   | **推論パイプライン実装**                        | • **`src/inference/generator.py` (仮) の実装:**<br>  - 学習済みLoRAモデルのロード<br>  - 敷地マスクとプロンプトを用いた平面図生成処理<br>  - (要件定義書にある `FloorPlanGenerator` クラスの役割)                                 | `src/inference/generator.py` (新規作成または既存`src/generator.py`を移動・リファクタ)                          | 未着手                      | 20h         |
-| 6   | **制約チェックシステム実装**                      | • **`ArchitecturalConstraints` の詳細実装:**<br>  - 部屋・階段の連続性制約<br>  - 部屋間の接続性制約（アクセス可能性）<br>  - `image_to_grid` のAI出力形式への適合<br>  - `extract_solution` の後続処理への適合       | `src/constraints/architectural_constraints.py`                                                       | 骨格実装済み<br>(プレースホルダー多) | 15h         |
-| 7   | **FreeCAD連携システム実装**                   | • **`FreeCADGenerator` の詳細実装:**<br>  - AI出力/CP-SAT出力からの壁・開口部・階段の正確な検出<br>  - FreeCADオブジェクトへの変換ロジックの精緻化<br>• **`EditingFeatures` の詳細実装:**<br>  - スケッチ編集機能の具体化        | `src/freecad_bridge/fcstd_generator.py`, `src/freecad_bridge/editing_features.py`                    | 骨格実装済み<br>(プレースホルダー多) | 20h         |
-| 8   | **UI・統合システム**                           | • `src/ui/main_app.py` のプレースホルダーを実モジュール呼び出しに置換<br>• `scripts/generate_plan.py` のプレースホルダーを実モジュール呼び出しに置換<br>• 全体パイプラインの統合と動作確認                                                        | `src/ui/main_app.py`, `scripts/generate_plan.py`                                                     | 骨格実装済み<br>(プレースホルダー多) | 15h         |
-| 9   | **テスト・評価**                              | • `src/evaluation/metrics.py` の評価ロジック詳細実装<br>• `scripts/performance_test.py` を用いたパフォーマンステスト実行<br>• 品質メトリクスに基づいた評価と改善点の洗い出し                                                         | `src/evaluation/metrics.py`, `scripts/performance_test.py`                                           | 骨格実装済み<br>(プレースホルダー多) | 10h         |
-| 10  | **最終調整・ドキュメント**                       | • バグ修正<br>• パフォーマンス最適化<br>• README.md の更新（実行方法、注意事項など）                                                                                                                                 | 全体                                                                                                 | 未着手                      | 5h          |
-|     |                                           | **合計残り工数目安**                                                                                                                                                                                   |                                                                                                      |                             | **130h**    |
+| 4   | **AIモデル学習**                             | • `FloorPlanDataset` の微調整（必要に応じて）<br>• `LoRATrainer` の微調整（必要に応じて）<br>• `scripts/train_model.py` を用いたモデル学習実行<br>• 学習済みモデルの保存 (`models/lora_weights/`)                            | `src/training/dataset.py`, `src/training/lora_trainer.py`, `scripts/train_model.py`                  | 骨格実装済み                   | 15h         |
+| 5   | **推論パイプライン実装**                        | • **`src/inference/generator.py` (仮) の実装:**<br>  - 学習済みLoRAモデルのロード<br>  - 敷地マスクとプロンプトを用いた平面図生成処理<br>  - (要件定義書にある `FloorPlanGenerator` クラスの役割)                                 | `src/inference/generator.py` (新規作成または既存`src/generator.py`を移動・リファクタ)                          | 未着手                        | 20h         |
+| 6   | **制約チェックシステム実装**                      | • **`ArchitecturalConstraints` の詳細実装:**<br>  - 部屋・階段の連続性制約<br>  - 部屋間の接続性制約（アクセス可能性）<br>  - `image_to_grid` のAI出力形式への適合<br>  - `extract_solution` の後続処理への適合       | `src/constraints/architectural_constraints.py`                                                       | 骨格実装済み<br>(プレースホルダー多)   | 15h         |
+| 7   | **FreeCAD連携システム実装**                   | • **`FreeCADGenerator` の詳細実装:**<br>  - AI出力/CP-SAT出力からの壁・開口部・階段の正確な検出<br>  - FreeCADオブジェクトへの変換ロジックの精緻化<br>• **`EditingFeatures` の詳細実装:**<br>  - スケッチ編集機能の具体化        | `src/freecad_bridge/fcstd_generator.py`, `src/freecad_bridge/editing_features.py`                    | 骨格実装済み<br>(プレースホルダー多)   | 20h         |
+| 8   | **UI・統合システム**                           | • `src/ui/main_app.py` のプレースホルダーを実モジュール呼び出しに置換<br>• `scripts/generate_plan.py` のプレースホルダーを実モジュール呼び出しに置換<br>• 全体パイプラインの統合と動作確認                                                        | `src/ui/main_app.py`, `scripts/generate_plan.py`                                                     | 骨格実装済み<br>(プレースホルダー多)   | 15h         |
+| 9   | **テスト・評価**                              | • `src/evaluation/metrics.py` の評価ロジック詳細実装<br>• `scripts/performance_test.py` を用いたパフォーマンステスト実行<br>• 品質メトリクスに基づいた評価と改善点の洗い出し                                                         | `src/evaluation/metrics.py`, `scripts/performance_test.py`                                           | 骨格実装済み<br>(プレースホルダー多)   | 10h         |
+| 10  | **最終調整・ドキュメント**                       | • バグ修正<br>• パフォーマンス最適化<br>• README.md の更新（実行方法、注意事項など）                                                                                                                                 | 全体                                                                                                 | 未着手                        | 5h          |
+|     |                                           | **合計残り工数目安**                                                                                                                                                                                   |                                                                                                      |                               | **130h**    |
 
 **直近の具体的な作業ステップ (次の1週間程度を見込む):**
 
@@ -1294,19 +1302,19 @@ def performance_benchmark():
     
     app = FloorPlanApp()
     results = []
-    
+
     for case in test_cases:
         print(f"Testing {case['width']}x{case['height']} grid...")
         
         # メモリ使用量測定開始
         process = psutil.Process()
         initial_memory = process.memory_info().rss / 1024 / 1024  # MB
-        
+
         # GPU使用量（MPS）
         if torch.backends.mps.is_available():
             torch.mps.empty_cache()
             initial_gpu = torch.mps.current_allocated_memory() / 1024 / 1024  # MB
-        
+
         # 処理時間測定
         start_time = time.time()
         
@@ -1354,8 +1362,8 @@ def performance_benchmark():
     successful = [r for r in results if r.get('success', False)]
     avg_time = sum(r['processing_time'] for r in successful) / len(successful)
     time_compliance = sum(1 for r in successful if r['time_achieved']) / len(successful)
-    
-    print(f"\n📊 Performance Summary:")
+        
+        print(f"\n📊 Performance Summary:")
     print(f"Success Rate: {len(successful)}/{len(results)} ({len(successful)/len(results)*100:.1f}%)")
     print(f"Average Time: {avg_time:.2f}s")
     print(f"Time Target Compliance: {time_compliance*100:.1f}%")

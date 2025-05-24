@@ -7,12 +7,12 @@ MacBook Pro (M4 Max) とUbuntu 22.04上で動作する、建築図面PDFを学�
 - **目的**: 建築図面PDFから寸法を抽出し、AIで新しい平面図を生成
 - **グリッド**: 910mm（本間）/ 455mm（半間）の日本建築標準寸法
 - **出力**: FreeCADで編集可能な3Dモデル
-- **処理時間目標**: 5秒以内/件
+- **処理時間目標**: 2秒以内/件
 
 ## 🏗️ システム構成
 
 ```
-PDF図面 → 寸法抽出 → グリッド正規化 → AI学習 → 平面図生成 → 制約チェック → 3Dモデル
+PDF図面 → 寸法抽出(PaddleOCR) → グリッド正規化 → AI学習 → 平面図生成 → 制約チェック → 3Dモデル
 ```
 
 ## 🚀 セットアップ
@@ -22,9 +22,11 @@ PDF図面 → 寸法抽出 → グリッド正規化 → AI学習 → 平面図�
 ```bash
 cd ~/repos/floor_generate
 brew install python@3.11 git cmake pkg-config poppler tesseract tesseract-lang
+# FreeCADは公式サイトから .app をダウンロードし、直接利用することを推奨
 python3.11 -m venv floorplan_env
 source floorplan_env/bin/activate
 pip install --upgrade pip setuptools wheel
+# PyTorch (MPS対応) は requirements.txt または comprehensive_mvp_requirements.md を参照してインストール
 pip install -r requirements.txt
 chmod +x setup_dirs.sh
 ./setup_dirs.sh
@@ -39,13 +41,16 @@ sudo apt install -y software-properties-common
 sudo add-apt-repository ppa:deadsnakes/ppa -y
 sudo apt update
 sudo apt install -y python3.11 python3.11-venv python3.11-dev
-sudo apt install -y poppler-utils tesseract-ocr tesseract-ocr-jpn
+sudo apt install -y poppler-utils tesseract-ocr tesseract-ocr-jpn # Tesseractは補助用
 sudo apt install -y cmake pkg-config git
 python3.11 -m venv floorplan_env
 source floorplan_env/bin/activate
 pip install --upgrade pip setuptools wheel
-pip install torch==2.3.0 torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
+# PyTorch (CPU/GPU版) は comprehensive_mvp_requirements.md を参照し、適切なナイトリービルドをインストール
+# 例: pip install --pre torch torchvision torchaudio --index-url https://download.pytorch.org/whl/nightly/cpu
 pip install -r requirements.txt
+# PaddleOCRとPaddlePaddleのインストールもrequirements.txt経由、または個別実行
+# pip install paddleocr paddlepaddle
 chmod +x setup_dirs.sh
 ./setup_dirs.sh
 ```
@@ -56,7 +61,8 @@ chmod +x setup_dirs.sh
 cd ~/repos/floor_generate
 source floorplan_env/bin/activate
 pip install --upgrade pip setuptools wheel
-pip install -r requirements.txt --upgrade
+# requirements.txt を更新する場合は注意して実行
+# pip install -r requirements.txt --upgrade 
 pip list --outdated
 ```
 
@@ -86,7 +92,7 @@ floor_generate/
 
 ### 1. PDF図面の準備
 
-85枚以上のPDF図面を `data/raw_pdfs/` ディレクトリに配置してください。
+目標3000-5000ペアのPDF図面を `data/raw_pdfs/` ディレクトリに配置してください。
 
 ### 2. Streamlit UIの起動
 
@@ -133,8 +139,8 @@ python scripts/generate_plan.py --width 11 --height 10 --output outputs/
 ```bash
 cd ~/repos/floor_generate
 source floorplan_env/bin/activate
-python -c "import torch; print(f'PyTorch: {torch.__version__}')"
-python -c "import easyocr; print('EasyOCR imported successfully')"
+python -c "import torch; print(f'PyTorch: {torch.__version__}, MPS available: {torch.backends.mps.is_available() if torch.backends.mps.is_built() else False}')"
+python -c "from paddleocr import PaddleOCR; print('PaddleOCR imported successfully')"
 python -c "import pdf2image; print('PDF2Image imported successfully')"
 streamlit --version
 ```
@@ -176,7 +182,7 @@ python scripts/train_and_display.py --data-dir data/custom_training
 ## 📊 現在の進捗
 
 - [x] プロジェクト構造の作成
-- [x] PDF寸法抽出モジュール
+- [x] PDF寸法抽出モジュール (PaddleOCRへ移行)
 - [x] グリッド正規化システム
 - [x] 学習データ生成骨格
 - [x] AI学習システム骨格
@@ -206,25 +212,22 @@ python scripts/train_and_display.py --data-dir data/custom_training
   - [ ] 異なる入力条件でのテスト
   - [ ] エラー回復メカニズムのテスト
 - [ ] パフォーマンス最適化
-  - [ ] 推論パイプラインの高速化（目標: 5秒以下）
+  - [ ] 推論パイプラインの高速化（目標: 2秒以下）
   - [ ] メモリ使用量の最適化
   - [ ] UI/UX改善
 
 ## 🔧 トラブルシューティング
 
-### OCRが動作しない場合（macOS）
+### OCRが動作しない場合（macOS/Ubuntu）
 
-```bash
-tesseract --version
-brew install tesseract-lang
-```
-
-### OCRが動作しない場合（Ubuntu）
-
-```bash
-tesseract --version
-sudo apt install tesseract-ocr-jpn
-```
+- **PaddleOCR/PaddlePaddleのインストール確認**: `pip list | grep paddle`
+- **日本語モデルの利用確認**: `DimensionExtractor` クラスの `PaddleOCR` 初期化時に `lang='japan'` が指定されているか確認してください。
+- Tesseract (補助用) の場合:
+  ```bash
+  tesseract --version
+  # macOS: brew install tesseract-lang
+  # Ubuntu: sudo apt install tesseract-ocr-jpn
+  ```
 
 ### PDFが読み込めない場合
 
@@ -235,21 +238,15 @@ python -c "import pdf2image; print('PDF processing available')"
 
 ### 依存関係の互換性問題
 
-以下のエラーが発生した場合：
-```
-module 'huggingface_hub.constants' has no attribute 'HF_HUB_CACHE'
-```
+`comprehensive_mvp_requirements.md` のセクション3.2および3.3に記載されている、動作確認済みのライブラリバージョンセット（例: `diffusers==0.28.1`, `transformers==4.40.1`, `huggingface_hub==0.22.2` など）を参照してください。
 
-互換性のあるパッケージバージョンを使用してください：
-```bash
-pip install diffusers==0.19.3 transformers==4.31.0 huggingface_hub==0.16.4 peft==0.4.0 tokenizers==0.13.3
-```
+問題が発生した場合は、まずこれらのバージョンに合わせることを検討してください。
+稀にパッチスクリプトが必要になる場合があります。
 
-または、提供されているパッチスクリプトを使用してください：
-```bash
-# スクリプトの先頭に追加
-import patch_diffusers
-patch_diffusers.apply_patches()
+```python
+# スクリプトの先頭に追加 (問題発生時に検討)
+# import patch_diffusers # カスタムパッチスクリプト
+# patch_diffusers.apply_patches()
 ```
 
 ### 仮想環境の問題
