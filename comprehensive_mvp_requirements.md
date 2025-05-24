@@ -61,29 +61,57 @@ graph TD
 ### 3.1 システム要件
 ```bash
 # ハードウェア
-- MacBook Pro M4 Max (推奨)
+- MacBook Pro M4 Max (推奨) / Ubuntu 22.04 (x86_64)
 - RAM: 64GB以上 (128GB推奨)
 - Storage: 100GB以上の空き容量
 
 # ソフトウェア
-- macOS 14.0以上
+- macOS 14.0以上 / Ubuntu 22.04以上
 - Python 3.11
 - FreeCAD 0.22
-- Git, Homebrew
+- Git, Homebrew (macOS) / APT (Ubuntu)
 ```
 
 ### 3.2 環境構築手順
 
+#### macOS環境
 ```bash
+cd ~/repos/floor_generate
+
 # 1. 基本ツールインストール
-brew install python@3.11 freecad git cmake pkg-config poppler tesseract
-brew install --cask freecad
+brew install python@3.11 freecad git cmake pkg-config poppler tesseract tesseract-lang
 
 # 2. Python仮想環境
 python3.11 -m venv floorplan_env
 source floorplan_env/bin/activate
 
 # 3. PyTorch (MPS対応)
+pip install --upgrade pip setuptools wheel
+pip install torch==2.3.0 torchvision torchaudio
+
+# 4. 依存関係のインストール
+pip install -r requirements.txt
+```
+
+#### Ubuntu 22.04環境
+```bash
+cd ~/repos/floor_generate
+
+# 1. システムパッケージインストール
+sudo apt update
+sudo apt install -y software-properties-common
+sudo add-apt-repository ppa:deadsnakes/ppa -y
+sudo apt update
+sudo apt install -y python3.11 python3.11-venv python3.11-dev
+sudo apt install -y poppler-utils tesseract-ocr tesseract-ocr-jpn
+sudo apt install -y cmake pkg-config git
+
+# 2. Python仮想環境
+python3.11 -m venv floorplan_env
+source floorplan_env/bin/activate
+
+# 3. PyTorch (CPU版)
+pip install --upgrade pip setuptools wheel
 pip install torch==2.3.0 torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
 
 # 4. AI/ML ライブラリ
@@ -1307,15 +1335,14 @@ if __name__ == "__main__":
 
 ### 初回セットアップ
 ```bash
-# リポジトリクローン
-git clone <repository-url> floorplan_mvp
-cd floorplan_mvp
+cd ~/repos/floor_generate
 
-# 環境構築
-chmod +x scripts/setup.sh
-./scripts/setup.sh
+# 環境構築（上記のmacOSまたはUbuntu手順を実行後）
+chmod +x setup_dirs.sh
+./setup_dirs.sh
 
 # 学習データ準備（PDFファイルを data/raw_pdfs/ に配置後）
+source floorplan_env/bin/activate
 python scripts/prepare_training_data.py --pdf_dir data/raw_pdfs --output_dir data/training
 
 # モデル学習
@@ -1324,11 +1351,41 @@ python scripts/train_model.py --data_dir data/training --epochs 20
 
 ### 推論実行
 ```bash
+cd ~/repos/floor_generate
+source floorplan_env/bin/activate
+
 # Streamlit UI起動
-streamlit run src/ui/main_app.py
+streamlit run src/ui/main_app.py --server.port 8501 --server.address 0.0.0.0
 
 # コマンドライン推論
 python scripts/generate_plan.py --width 11 --height 10 --output outputs/
+```
+
+### 依存関係の維持（Maintain Dependencies）
+```bash
+cd ~/repos/floor_generate
+source floorplan_env/bin/activate
+pip install --upgrade pip setuptools wheel
+pip install -r requirements.txt --upgrade
+pip list --outdated
+```
+
+### ローカルアプリのセットアップ（Setup Local App）
+```bash
+cd ~/repos/floor_generate
+source floorplan_env/bin/activate
+
+# PDFデータの前処理実行
+python scripts/process_pdfs.py
+
+# 完全なパイプラインテスト
+python scripts/performance_test.py
+
+# 初回セットアップ確認
+python -c "import torch; print(f'PyTorch: {torch.__version__}')"
+python -c "import easyocr; print('EasyOCR imported successfully')"
+python -c "import pdf2image; print('PDF2Image imported successfully')"
+streamlit --version
 ```
 
 ### FreeCADでの編集

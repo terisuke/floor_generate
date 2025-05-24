@@ -1,6 +1,6 @@
 # 910mmグリッド住宅プラン自動生成システム
 
-MacBook Pro (M4 Max) 上で動作する、建築図面PDFを学習し910mm/455mm混合グリッドで住宅平面図を自動生成するシステム。
+MacBook Pro (M4 Max) とUbuntu 22.04上で動作する、建築図面PDFを学習し910mm/455mm混合グリッドで住宅平面図を自動生成するシステム。
 
 ## 📋 概要
 
@@ -17,30 +17,47 @@ PDF図面 → 寸法抽出 → グリッド正規化 → AI学習 → 平面図�
 
 ## 🚀 セットアップ
 
-### 1. 環境準備
+### 1. 環境準備（macOS）
 
 ```bash
-# Python 3.11 仮想環境の作成
-python3.11 -m venv venv
-source venv/bin/activate  # Mac/Linux
-
-# 依存関係のインストール
+cd ~/repos/floor_generate
+brew install python@3.11 git cmake pkg-config poppler tesseract tesseract-lang
+python3.11 -m venv floorplan_env
+source floorplan_env/bin/activate
+pip install --upgrade pip setuptools wheel
 pip install -r requirements.txt
-```
-
-### 2. 追加ツールのインストール
-
-```bash
-# Homebrew でツールをインストール
-brew install poppler tesseract
-```
-
-### 3. ディレクトリ構造の作成
-
-```bash
-# セットアップスクリプトの実行
 chmod +x setup_dirs.sh
 ./setup_dirs.sh
+```
+
+### 1-2. 環境準備（Ubuntu 22.04）
+
+```bash
+cd ~/repos/floor_generate
+sudo apt update
+sudo apt install -y software-properties-common
+sudo add-apt-repository ppa:deadsnakes/ppa -y
+sudo apt update
+sudo apt install -y python3.11 python3.11-venv python3.11-dev
+sudo apt install -y poppler-utils tesseract-ocr tesseract-ocr-jpn
+sudo apt install -y cmake pkg-config git
+python3.11 -m venv floorplan_env
+source floorplan_env/bin/activate
+pip install --upgrade pip setuptools wheel
+pip install torch==2.3.0 torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
+pip install -r requirements.txt
+chmod +x setup_dirs.sh
+./setup_dirs.sh
+```
+
+### 2. 依存関係の維持・更新（Maintain Dependencies）
+
+```bash
+cd ~/repos/floor_generate
+source floorplan_env/bin/activate
+pip install --upgrade pip setuptools wheel
+pip install -r requirements.txt --upgrade
+pip list --outdated
 ```
 
 ## 📁 プロジェクト構造
@@ -65,20 +82,64 @@ floor_generate/
 └── scripts/             # 実行スクリプト
 ```
 
-## 🎯 使用方法
+## 🎯 使用方法（Setup Local App）
 
 ### 1. PDF図面の準備
 
-6枚のPDF図面を `data/raw_pdfs/` ディレクトリに配置してください。
+85枚以上のPDF図面を `data/raw_pdfs/` ディレクトリに配置してください。
 
-### 2. 寸法抽出の実行
+### 2. Streamlit UIの起動
 
 ```bash
-# PDFから寸法を抽出
+cd ~/repos/floor_generate
+source floorplan_env/bin/activate
+streamlit run src/ui/main_app.py --server.port 8501 --server.address 0.0.0.0
+```
+
+### 3. PDFデータの前処理実行
+
+```bash
+cd ~/repos/floor_generate
+source floorplan_env/bin/activate
 python scripts/process_pdfs.py
 ```
 
-### 3. 結果の確認
+### 4. 学習データ準備
+
+```bash
+cd ~/repos/floor_generate
+source floorplan_env/bin/activate
+python scripts/prepare_training_data.py --pdf_dir data/raw_pdfs --output_dir data/training
+```
+
+### 5. 完全なパイプラインテスト
+
+```bash
+cd ~/repos/floor_generate
+source floorplan_env/bin/activate
+python scripts/performance_test.py
+```
+
+### 6. 個別の平面図生成テスト
+
+```bash
+cd ~/repos/floor_generate
+source floorplan_env/bin/activate
+python scripts/generate_plan.py --width 11 --height 10 --output outputs/
+```
+
+### 7. 初回セットアップ確認
+
+```bash
+cd ~/repos/floor_generate
+source floorplan_env/bin/activate
+python -c "import torch; print(f'PyTorch: {torch.__version__}')"
+python -c "import easyocr; print('EasyOCR imported successfully')"
+python -c "import pdf2image; print('PDF2Image imported successfully')"
+streamlit --version
+```
+
+### 結果の確認
 
 抽出結果は `data/extracted/` に保存されます：
 - 個別の寸法情報: `*_dimensions.json`
@@ -89,29 +150,46 @@ python scripts/process_pdfs.py
 - [x] プロジェクト構造の作成
 - [x] PDF寸法抽出モジュール
 - [x] グリッド正規化システム
-- [ ] 学習データ生成
-- [ ] AI学習システム
-- [ ] 制約チェック
-- [ ] FreeCAD連携
-- [ ] UI実装
+- [x] 学習データ生成骨格
+- [x] AI学習システム骨格
+- [x] 制約チェック骨格
+- [x] FreeCAD連携骨格
+- [x] UI実装骨格
+- [ ] 学習データ生成詳細実装
+- [ ] パイプライン統合テスト
 
 ## 🔧 トラブルシューティング
 
-### OCRが動作しない場合
+### OCRが動作しない場合（macOS）
 
 ```bash
-# Tesseractの確認
 tesseract --version
-
-# 日本語データのインストール
 brew install tesseract-lang
+```
+
+### OCRが動作しない場合（Ubuntu）
+
+```bash
+tesseract --version
+sudo apt install tesseract-ocr-jpn
 ```
 
 ### PDFが読み込めない場合
 
 ```bash
-# Popplerの確認
 pdftoppm -h
+python -c "import pdf2image; print('PDF processing available')"
+```
+
+### 仮想環境の問題
+
+```bash
+cd ~/repos/floor_generate
+rm -rf floorplan_env
+python3.11 -m venv floorplan_env
+source floorplan_env/bin/activate
+pip install --upgrade pip setuptools wheel
+pip install -r requirements.txt
 ```
 
 ## 📝 ライセンス
