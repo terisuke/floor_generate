@@ -232,15 +232,27 @@ python -c "import pdf2image; print('PDF processing available')"
 
 ### 依存関係の互換性問題
 
-PyTorchやDiffusersなどのAI関連ライブラリはバージョン間の互換性が頻繁に変わるため、`comprehensive_mvp_requirements.md`（または本文書）の「主要技術スタック」セクションで推奨されているバージョン（特にPyTorchのナイトリー版など）を参考にしてください。
+PyTorchやDiffusersなどのAI関連ライブラリはバージョン間の互換性が頻繁に変わるため、以下の互換性が確認されているバージョンを使用してください：
 
-問題が発生した場合は、仮想環境を再構築し、`requirements.txt`に記載されたバージョン、またはプロジェクトで動作確認が取れている最新の組み合わせでインストールし直すことを推奨します。
+```
+diffusers==0.19.3
+transformers==4.31.0
+huggingface_hub==0.16.4
+peft==0.4.0
+tokenizers==0.13.3
+```
+
+これらのバージョンは`requirements.txt`に記載されており、特に`huggingface_hub`、`diffusers`、`transformers`間の互換性問題（`HF_HUB_CACHE`属性エラーなど）を解決します。
+
+また、diffusersライブラリを使用する全てのスクリプトの先頭に以下のコードを追加する必要があります：
 
 ```python
-# スクリプトの先頭に追加 (問題発生時に検討、通常は不要)
-# import patch_diffusers # カスタムパッチスクリプト
-# patch_diffusers.apply_patches()
+# スクリプトの先頭に追加（必須）
+import patch_diffusers
+patch_diffusers.apply_patches()
 ```
+
+このパッチスクリプトは、互換性問題を解決し、正常な動作を保証します。詳細は`dependency_compatibility.md`を参照してください。
 
 ### 仮想環境の問題
 
