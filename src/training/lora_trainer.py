@@ -249,10 +249,17 @@ class LoRATrainer:
             dtype = torch.float32
         else:
             dtype = torch.float16
+        
+        if hasattr(self.unet, "get_base_model"):
+            unet_for_pipeline = self.unet.get_base_model()
+        elif hasattr(self.unet, "base_model"):
+            unet_for_pipeline = self.unet.base_model
+        else:
+            unet_for_pipeline = self.unet
             
         pipeline = StableDiffusionPipeline.from_pretrained(
             self.model_id,
-            unet=self.unet,
+            unet=unet_for_pipeline,
             torch_dtype=dtype,
             use_auth_token=False,
             safety_checker=None,
@@ -273,4 +280,4 @@ class LoRATrainer:
 #     # Need a dummy DataLoader for training or remove the __main__ block
 #     # trainer.train(dummy_dataloader, num_epochs=1)
 #     # Need a dummy site_mask and prompt for inference or remove the method
-#     # trainer.inference(dummy_mask, "a test house")     
+#     # trainer.inference(dummy_mask, "a test house")          

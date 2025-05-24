@@ -114,9 +114,10 @@ source floorplan_env/bin/activate
 pip install --upgrade pip setuptools wheel
 pip install torch==2.3.0 torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
 
-# 4. AI/ML ライブラリ
-pip install diffusers==0.27.0 transformers==4.36.0 accelerate==0.25.0
-pip install peft==0.7.1  # LoRA学習用
+# 4. AI/ML ライブラリ（互換性確認済みバージョン）
+pip install diffusers==0.19.3 transformers==4.31.0 huggingface_hub==0.16.4
+pip install peft==0.4.0 tokenizers==0.13.3 accelerate==0.25.0
+# 注意: 上記のバージョンは互換性テスト済みです。バージョン変更時は注意してください。
 
 # 5. CAD/画像処理
 pip install opencv-python==4.8.1.78 Pillow==10.1.0
@@ -136,6 +137,31 @@ pip install streamlit==1.28.0 pandas==2.1.3 numpy==1.24.4
 # 9. FreeCAD Python連携
 pip install freecad  # FreeCAD Python binding
 ```
+
+### 3.3 依存関係の互換性
+
+以下のライブラリ間には互換性の問題があります：
+- `huggingface_hub`
+- `diffusers`
+- `transformers`
+
+互換性のあるバージョン組み合わせ：
+```
+diffusers==0.19.3
+transformers==4.31.0
+huggingface_hub==0.16.4
+peft==0.4.0
+tokenizers==0.13.3
+```
+
+互換性問題を解決するためのパッチスクリプト：
+```python
+# スクリプトの先頭に追加
+import patch_diffusers
+patch_diffusers.apply_patches()
+```
+
+詳細は `dependency_compatibility.md` を参照してください。
 
 ### 3.3 プロジェクト構造
 ```
@@ -1426,8 +1452,12 @@ streamlit --version
 - ✅ **Phase 6**: 制約チェックシステム実装と統合完了
 - ✅ **Phase 7**: FreeCAD連携システム実装完了
 - ✅ **Phase 8**: 実際の実装によるUI統合完了
-- 🔄 **Phase 9**: テストと評価進行中
-- ⏳ **Phase 10**: 最終調整とドキュメント更新予定
+- ✅ **Phase 9**: 依存関係の互換性問題解決完了
+  - ✅ huggingface_hub、diffusers、transformersの互換性修正
+  - ✅ HF_HUB_CACHE属性エラーの解決
+  - ✅ パッチスクリプトの実装
+- 🔄 **Phase 10**: テストと評価進行中
+- ⏳ **Phase 11**: 最終調整とドキュメント更新予定
 
 ### 最近の実装内容
 

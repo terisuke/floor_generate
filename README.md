@@ -197,6 +197,10 @@ python scripts/train_and_display.py --data-dir data/custom_training
   - [x] 学習→推論→表示の一貫スクリプト
   - [x] プレースホルダー置換
   - [x] エラー処理強化
+- [x] 依存関係の互換性問題解決
+  - [x] huggingface_hub、diffusers、transformersの互換性修正
+  - [x] HF_HUB_CACHE属性エラーの解決
+  - [x] パッチスクリプトの実装
 - [ ] パフォーマンス最適化
 
 ## 🔧 トラブルシューティング
@@ -220,6 +224,25 @@ sudo apt install tesseract-ocr-jpn
 ```bash
 pdftoppm -h
 python -c "import pdf2image; print('PDF processing available')"
+```
+
+### 依存関係の互換性問題
+
+以下のエラーが発生した場合：
+```
+module 'huggingface_hub.constants' has no attribute 'HF_HUB_CACHE'
+```
+
+互換性のあるパッケージバージョンを使用してください：
+```bash
+pip install diffusers==0.19.3 transformers==4.31.0 huggingface_hub==0.16.4 peft==0.4.0 tokenizers==0.13.3
+```
+
+または、提供されているパッチスクリプトを使用してください：
+```bash
+# スクリプトの先頭に追加
+import patch_diffusers
+patch_diffusers.apply_patches()
 ```
 
 ### 仮想環境の問題
