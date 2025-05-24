@@ -1,0 +1,225 @@
+from diffusers import StableDiffusionPipeline, DDPMScheduler
+from peft import LoraConfig, get_peft_model
+import torch
+import torch.nn.functional as F
+from torch.utils.data import DataLoader
+import os
+
+class LoRATrainer:
+    def __init__(self):
+        self.device = "mps" if torch.backends.mps.is_available() else "cpu"
+
+        # Base model
+        self.model_id = "runwayml/stable-diffusion-v2-1"
+        # Load in float32 for MPS compatibility during training, will convert to float16 for inference
+        self.pipeline = StableDiffusionPipeline.from_pretrained(
+            self.model_id,
+            torch_dtype=torch.float32 # Use float32 for MPS training
+        ).to(self.device)
+
+        # Disable safety checker
+        self.pipeline.safety_checker = None
+
+        # LoRA設定
+        self.lora_config = LoraConfig(
+            r=64,                    # Rank (軽量化)
+            lora_alpha=64,
+            target_modules=[
+                "to_k", "to_q", "to_v", "to_out.0",
+                "proj_in", "proj_out",
+                "ff.net.0.proj", "ff.net.2"
+            ],
+            lora_dropout=0.1,
+        )
+
+        # Ensure UNet is in float32 before applying LoRA
+        self.pipeline.unet = self.pipeline.unet.to(torch.float32)
+
+        # Apply LoRA to UNet
+        self.unet = get_peft_model(self.pipeline.unet, self.lora_config)
+
+        # Optimizer setup after applying LoRA
+        self.optimizer = torch.optim.AdamW(
+            self.unet.parameters(),
+            lr=1e-4,
+            weight_decay=1e-2
+        )
+
+        # Scheduler (optional but good practice)
+        self.scheduler = DDPMScheduler.from_config(self.pipeline.scheduler.config)
+
+
+    def train(self, train_dataloader: DataLoader, num_epochs=20):
+        """LoRA学習実行"""
+
+        self.unet.train()
+
+        # Move text_encoder to device
+        self.pipeline.text_encoder = self.pipeline.text_encoder.to(self.device)
+
+        for epoch in range(num_epochs):
+            total_loss = 0
+            for batch_idx, batch in enumerate(train_dataloader):
+
+                # バッチデータ
+                # Ensure tensors are in float32 for MPS training
+                site_masks = batch['condition'].to(self.device, dtype=torch.float32)
+                target_plans = batch['target'].to(self.device, dtype=torch.float32)
+                prompts = batch['prompt']
+
+                # ノイズ追加
+                noise = torch.randn_like(target_plans).to(self.device, dtype=torch.float32)
+                timesteps = torch.randint(0, self.scheduler.config.num_train_timesteps, (target_plans.shape[0],), device=self.device).long()
+
+                noisy_plans = self.scheduler.add_noise(
+                    target_plans, noise, timesteps
+                )
+
+                # 予測
+                # No need for autocast with MPS and float32, managed by device
+                
+                # Text encoding
+                # Ensure input_ids are on the correct device
+                text_input_ids = self.pipeline.tokenizer(
+                    prompts,
+                    padding=True,
+                    return_tensors="pt"
+                ).input_ids.to(self.device)
+
+                text_embeddings = self.pipeline.text_encoder(
+                    text_input_ids
+                )[0]
+
+                # UNet prediction
+                noise_pred = self.unet(
+                    noisy_plans,
+                    timesteps,
+                    encoder_hidden_states=text_embeddings,
+                    return_dict=False
+                )[0]
+
+                # Loss計算
+                loss = F.mse_loss(noise_pred, noise, reduction="mean")
+
+                # バックプロパゲーション
+                self.optimizer.zero_grad()
+                loss.backward()
+                self.optimizer.step()
+
+                total_loss += loss.item()
+
+                if batch_idx % 50 == 0:
+                    print(f"Epoch {epoch}, Batch {batch_idx}, Loss: {loss.item():.4f}")
+
+            print(f"Epoch {epoch} completed. Average Loss: {total_loss/len(train_dataloader):.4f}")
+
+            # モデル保存
+            # Save only the LoRA weights
+            if epoch % 5 == 0:
+                 # Create directory if it doesn't exist
+                 save_dir = f"models/lora_weights/epoch_{epoch}"
+                 os.makedirs(save_dir, exist_ok=True)
+                 self.unet.save_pretrained(save_dir)
+                 print(f"LoRA weights saved to {save_dir}")
+
+    def inference(self, site_mask: torch.Tensor, prompt: str, num_inference_steps=50):
+        """単一プロンプトでの推論実行"""
+        self.unet.eval()
+
+        # Move site_mask to device and ensure float32
+        site_mask = site_mask.to(self.device, dtype=torch.float32)
+        
+        # Add batch dimension if missing
+        if site_mask.ndim == 3:
+            site_mask = site_mask.unsqueeze(0)
+
+        # Prepare text embeddings
+        text_input_ids = self.pipeline.tokenizer(
+            prompt,
+            padding=True,
+            return_tensors="pt"
+        ).input_ids.to(self.device)
+
+        text_embeddings = self.pipeline.text_encoder(
+            text_input_ids
+        )[0]
+
+        # Prepare latent dimensions based on UNet input size
+        # SD 2.1 works with 512x512 images, latents are 64x64
+        # Need to adjust if using a different base model or resolution
+        # Assuming 256x256 target size, latents should be 32x32
+        # The condition (site_mask) size should match the target image size for input to the generator model (which isn't standard SD)
+        # The requirement has site_mask as input to SD inference.
+        # Standard Stable Diffusion does NOT take an image mask directly as conditional input in the UNet like this.
+        # ControlNet or similar models are used for this.
+        # The requirement implies the site mask is somehow used in the SD pipeline.
+        # Let's assume the generator model (which uses SD 2.1 + LoRA) is modified to accept the site_mask.
+        # This is a significant deviation from standard SD inference.
+        # Re-reading requirement: G[Streamlit UI] --> H[敷地マスク生成] --> I[SD推論<br>平面図生成]
+        # This suggests the SD inference step *uses* the site mask.
+        # How is the site mask incorporated into SD 2.1 + LoRA?
+        # Option 1: Concatenate site mask to latent space (requires modifying UNet architecture)
+        # Option 2: Use site mask as an attention mask (requires modifying UNet)
+        # Option 3: Simple approach - upscale site mask and concatenate to the *image* input before VAE encoding? (Less common)
+        # Option 4: Modify the prompt based on the site mask characteristics? (Indirect)
+        # Option 5: Use the site mask during the diffusion process (e.g., inpainting-like conditional generation)?
+
+        # Given the mention of SD 2.1 + LoRA, modifying the UNet architecture directly to accept a site mask channel
+        # in the latent space is the most plausible approach for conditional generation based on the mask.
+        # This would mean the UNet input should be `noisy_latents + site_mask_latent`. The site_mask_latent would be derived from the site_mask.
+
+        # Let's assume the LoRA-tuned UNet is adapted to take an extra channel for the site mask.
+        # This would mean `noisy_plans` (which become latents after VAE encode) need an extra channel.
+        # Or, the site mask is processed and input alongside `noisy_plans` and `timesteps` into `self.unet()`.
+        # The `unet` call in the training loop `noise_pred = self.unet(noisy_plans, timesteps.to(self.device), encoder_hidden_states=text_embeddings, return_dict=False)[0]`
+        # only takes `noisy_plans`, `timesteps`, `encoder_hidden_states`. It does *not* take `site_mask`.
+        # This implies the site mask is *not* used as a direct input to the UNet in the provided training code structure.
+
+        # Re-evaluating the inference process in requirement (Section 8.1 Streamlit UI):
+        # `site_mask = self.generator.create_site_mask(width, height)`
+        # `raw_plan = self.generator.generate_plan(site_mask, prompt)`
+        # This `generate_plan` method (presumably in src/inference/generator.py) is the one that uses SD inference.
+        # It receives the `site_mask` and `prompt`. How does it use them with a standard SD pipeline (even LoRA-tuned)?
+
+        # Perhaps the `site_mask` is used *during* the diffusion sampling loop, for example,
+        # by enforcing the mask on the generated image at each step (like inpainting)?
+        # Or maybe the `site_mask` is used to guide the generation in some other way not standard to the base SD pipeline.
+
+        # Let's look at the `FloorPlanGenerator` class in the Streamlit UI code snippet (Section 8.1):
+        # It has `generate_plan(site_mask, prompt)` and `validate_constraints(raw_plan)` and `to_svg(validated_plan)`.
+        # This suggests `generate_plan` is where the SD inference happens.
+        # The `LoRATrainer` class here seems focused on the *training* loop for the UNet + LoRA.
+        # The *inference* logic should likely reside in a separate class, e.g., `FloorPlanGenerator` or similar.
+        # The `inference` method signature in *this* `LoRATrainer` is confusing as it implies this class handles inference.
+        # Let's remove the `inference` method from `LoRATrainer` as it seems misplaced based on the overall structure.
+        # Inference should be handled by the `FloorPlanGenerator` which orchestrates the use of the trained model.
+
+        pass # Remove this method after confirming the plan
+
+    # Method to load trained LoRA weights
+    def load_lora_weights(self, weights_path):
+        """学習済みLoRA重みを読み込み"""
+        # Load LoRA weights into the UNet
+        # self.unet is already a PeftModel because get_peft_model was called in __init__
+        # Need to load the state_dict from the saved weights_path
+        if os.path.exists(weights_path):
+            print(f"Loading LoRA weights from {weights_path}...")
+            self.unet.load_state_dict(torch.load(os.path.join(weights_path, "adapter_model.safetensors")), strict=False) # Assuming safetensors format
+            # Or if saved with save_pretrained, it might be different.
+            # Let's assume save_pretrained saves the correct format for load_pretrained.
+            self.unet = self.unet.from_pretrained(self.unet, weights_path) # Correct way to load with peft
+
+            print("LoRA weights loaded.")
+        else:
+            print(f"Warning: LoRA weights not found at {weights_path}")
+
+
+# Helper function for demonstration (optional)
+# if __name__ == "__main__":
+#     # Dummy usage
+#     trainer = LoRATrainer()
+#     print("LoRATrainer initialized.")
+#     # Need a dummy DataLoader for training or remove the __main__ block
+#     # trainer.train(dummy_dataloader, num_epochs=1)
+#     # Need a dummy site_mask and prompt for inference or remove the method
+#     # trainer.inference(dummy_mask, "a test house") 
