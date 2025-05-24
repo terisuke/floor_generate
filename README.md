@@ -1,18 +1,31 @@
 # 910mmグリッド住宅プラン自動生成システム
 
-MacBook Pro (M4 Max) とUbuntu 22.04上で動作する、建築図面PDFを学習し910mm/455mm混合グリッドで住宅平面図を自動生成するシステム。
+MacBook Pro (M4 Max) とUbuntu 22.04上で動作する、建築図面PDFを学習し910mm/455mm混合グリッドで住宅平面図を自動生成するMVP（Minimum Viable Product）システム。
 
 ## 📋 概要
 
-- **目的**: 建築図面PDFから寸法を抽出し、AIで新しい平面図を生成
-- **グリッド**: 910mm（本間）/ 455mm（半間）の日本建築標準寸法
-- **出力**: FreeCADで編集可能な3Dモデル
-- **処理時間目標**: 2秒以内/件
+- **目的**: 建築図面PDFから寸法や特徴を抽出し、AIで新しい平面図を生成。
+- **グリッド**: 910mm（本間）/ 455mm（半間）の日本建築標準寸法。
+- **出力**: FreeCADで編集可能な基本的な3Dモデル（壁の押し出し）とSVG形式の2Dプラン。
+- **処理時間目標**: 2秒以内/件（M4 Max環境想定）。
+- **MVPの焦点**: データ処理パイプラインの半自動化（壁情報中心、少量PDFで検証）と、AIによる基本的な平面図生成からCAD出力までのコアパイプライン確立。
 
 ## 🏗️ システム構成
 
-```
-PDF図面 → 寸法抽出(PaddleOCR) → グリッド正規化 → AI学習 → 平面図生成 → 制約チェック → 3Dモデル
+```mermaid
+graph TD
+    A[PDF図面集<br>MVP少量で実証] --> B[寸法・特徴抽出<br>src/preprocessing/<br>dimension_extractor.py<br>(PaddleOCR)]
+    B --> C[グリッド正規化<br>src/preprocessing/<br>grid_normalizer.py]
+    C --> D[学習データペア生成<br>src/preprocessing/<br>training_data_generator.py<br>(半自動:壁情報中心)]
+    D --> E[学習データセット]
+    E --> F[AIモデル学習<br>src/training/<br>lora_trainer.py]
+    
+    G[Streamlit UI<br>(敷地・LDK等入力)] --> H[敷地マスク生成]
+    H --> I[AI推論<br>(平面図生成)]
+    I --> J[基本制約チェック<br>(ルールベース)]
+    J --> K[ベクタ変換<br>(SVG出力)]
+    K --> L[FreeCAD連携<br>(壁の3D押出)]
+    L --> N[3Dモデル<br>(.FCStd出力)]
 ```
 
 ## 🚀 セットアップ
@@ -21,13 +34,14 @@ PDF図面 → 寸法抽出(PaddleOCR) → グリッド正規化 → AI学習 →
 
 ```bash
 cd ~/repos/floor_generate
-brew install python@3.11 git cmake pkg-config poppler tesseract tesseract-lang
+brew install python@3.11 git cmake pkg-config poppler
 # FreeCADは公式サイトから .app をダウンロードし、直接利用することを推奨
 python3.11 -m venv floorplan_env
 source floorplan_env/bin/activate
 pip install --upgrade pip setuptools wheel
-# PyTorch (MPS対応) は requirements.txt または comprehensive_mvp_requirements.md を参照してインストール
-pip install -r requirements.txt
+# PyTorch (M4 Max MPS対応の最新ナイトリー版推奨)
+# 例: pip install --pre torch torchvision torchaudio --index-url https://download.pytorch.org/whl/nightly/cpu
+pip install -r requirements.txt # PaddleOCR/PaddlePaddleも含む
 chmod +x setup_dirs.sh
 ./setup_dirs.sh
 ```
@@ -41,16 +55,13 @@ sudo apt install -y software-properties-common
 sudo add-apt-repository ppa:deadsnakes/ppa -y
 sudo apt update
 sudo apt install -y python3.11 python3.11-venv python3.11-dev
-sudo apt install -y poppler-utils tesseract-ocr tesseract-ocr-jpn # Tesseractは補助用
-sudo apt install -y cmake pkg-config git
+sudo apt install -y poppler-utils cmake pkg-config git
 python3.11 -m venv floorplan_env
 source floorplan_env/bin/activate
 pip install --upgrade pip setuptools wheel
-# PyTorch (CPU/GPU版) は comprehensive_mvp_requirements.md を参照し、適切なナイトリービルドをインストール
+# PyTorch (CPU/GPU版、最新ナイトリー版推奨)
 # 例: pip install --pre torch torchvision torchaudio --index-url https://download.pytorch.org/whl/nightly/cpu
-pip install -r requirements.txt
-# PaddleOCRとPaddlePaddleのインストールもrequirements.txt経由、または個別実行
-# pip install paddleocr paddlepaddle
+pip install -r requirements.txt # PaddleOCR/PaddlePaddleも含む
 chmod +x setup_dirs.sh
 ./setup_dirs.sh
 ```
@@ -92,7 +103,7 @@ floor_generate/
 
 ### 1. PDF図面の準備
 
-目標3000-5000ペアのPDF図面を `data/raw_pdfs/` ディレクトリに配置してください。
+MVPでは、少数のサンプルPDF図面を `data/raw_pdfs/` ディレクトリに配置して、データ処理パイプラインの動作検証を行います。将来的には目標3000-5000ペア。
 
 ### 2. Streamlit UIの起動
 
@@ -182,52 +193,35 @@ python scripts/train_and_display.py --data-dir data/custom_training
 ## 📊 現在の進捗
 
 - [x] プロジェクト構造の作成
-- [x] PDF寸法抽出モジュール (PaddleOCRへ移行)
+- [x] PDF寸法・特徴抽出モジュール (PaddleOCRベース)
 - [x] グリッド正規化システム
-- [x] 学習データ生成骨格
-- [x] AI学習システム骨格
-- [x] 制約チェック骨格
-- [x] FreeCAD連携骨格
-- [x] UI実装骨格
-- [x] 学習データ生成詳細実装
-- [x] AIモデル学習システム詳細実装
-  - [x] LoRAトレーナー実装
-  - [x] データセット強化
-  - [x] 学習スクリプト
-  - [x] 推論生成器
-- [x] 制約チェックシステム実装
-  - [x] 壁・部屋の制約検証
-  - [x] 修復アルゴリズム
-  - [x] 可視化機能
-- [x] パイプライン統合
-  - [x] 学習→推論→表示の一貫スクリプト
-  - [x] プレースホルダー置換
-  - [x] エラー処理強化
-- [x] 依存関係の互換性問題解決
-  - [x] huggingface_hub、diffusers、transformersの互換性修正
-  - [x] HF_HUB_CACHE属性エラーの解決
-  - [x] パッチスクリプトの実装
-- [ ] エンドツーエンドテスト
-  - [ ] トレーニングからStreamlit表示までの完全なパイプラインテスト
-  - [ ] 異なる入力条件でのテスト
-  - [ ] エラー回復メカニズムのテスト
-- [ ] パフォーマンス最適化
-  - [ ] 推論パイプラインの高速化（目標: 2秒以下）
-  - [ ] メモリ使用量の最適化
-  - [ ] UI/UX改善
+- [x] 学習データペア生成パイプライン基盤（半自動化、壁情報中心）
+- [x] AIモデル学習システム骨格 (Stable Diffusion + LoRA)
+- [x] 基本的な制約チェック骨格 (ルールベース優先)
+- [x] FreeCAD連携骨格 (壁の3D押し出し、SVG出力)
+- [x] Streamlit UI実装骨格
+- [x] `scripts/` を活用した開発・テストパイプライン整備
+- [ ] **MVP開発中**:
+    - [ ] データ前処理パイプラインの安定化と少量データでの実証
+    - [ ] AIモデルの学習と基本的な平面図（壁構造）生成の検証
+    - [ ] 生成プランからFreeCADモデルとSVG出力の確認
+    - [ ] UIからの入力と生成結果表示のE2E動作確認
+- [ ] **MVP後**:
+    - [ ] エンドツーエンドテストの詳細化
+    - [ ] パフォーマンス最適化（処理時間、メモリ）
+    - [ ] データ処理の自動化範囲拡大
+    - [ ] AIモデルの生成品質向上
+    - [ ] 制約チェックの高度化 (CP-SAT活用)
+    - [ ] FreeCAD連携機能の拡充
 
 ## 🔧 トラブルシューティング
 
 ### OCRが動作しない場合（macOS/Ubuntu）
 
 - **PaddleOCR/PaddlePaddleのインストール確認**: `pip list | grep paddle`
-- **日本語モデルの利用確認**: `DimensionExtractor` クラスの `PaddleOCR` 初期化時に `lang='japan'` が指定されているか確認してください。
-- Tesseract (補助用) の場合:
-  ```bash
-  tesseract --version
-  # macOS: brew install tesseract-lang
-  # Ubuntu: sudo apt install tesseract-ocr-jpn
-  ```
+  - `requirements.txt` に基づき正しくインストールされているか確認。
+- **モデルファイルのダウンロード**: PaddleOCR初回実行時に必要なモデルファイルが自動ダウンロードされます。インターネット接続を確認してください。
+- **エラーメッセージの確認**: 具体的なエラーメッセージに応じて対処してください。
 
 ### PDFが読み込めない場合
 
@@ -238,13 +232,12 @@ python -c "import pdf2image; print('PDF processing available')"
 
 ### 依存関係の互換性問題
 
-`comprehensive_mvp_requirements.md` のセクション3.2および3.3に記載されている、動作確認済みのライブラリバージョンセット（例: `diffusers==0.28.1`, `transformers==4.40.1`, `huggingface_hub==0.22.2` など）を参照してください。
+PyTorchやDiffusersなどのAI関連ライブラリはバージョン間の互換性が頻繁に変わるため、`comprehensive_mvp_requirements.md`（または本文書）の「主要技術スタック」セクションで推奨されているバージョン（特にPyTorchのナイトリー版など）を参考にしてください。
 
-問題が発生した場合は、まずこれらのバージョンに合わせることを検討してください。
-稀にパッチスクリプトが必要になる場合があります。
+問題が発生した場合は、仮想環境を再構築し、`requirements.txt`に記載されたバージョン、またはプロジェクトで動作確認が取れている最新の組み合わせでインストールし直すことを推奨します。
 
 ```python
-# スクリプトの先頭に追加 (問題発生時に検討)
+# スクリプトの先頭に追加 (問題発生時に検討、通常は不要)
 # import patch_diffusers # カスタムパッチスクリプト
 # patch_diffusers.apply_patches()
 ```
