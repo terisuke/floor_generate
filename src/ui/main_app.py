@@ -42,6 +42,8 @@ class FloorPlanGeneratorPlaceholder:
         
         # Simulate that the validated plan is similar to raw_plan but maybe as BGR for st.image
         validated_plan_display = raw_plan_image[:,:,:3] # Take RGB from RGBA for display
+        # Ensure the array is contiguous and in the correct format for OpenCV
+        validated_plan_display = np.ascontiguousarray(validated_plan_display, dtype=np.uint8)
         # Add some green lines to show validation happened
         cv2.line(validated_plan_display, (0,0), (255,255), (0,255,0), 1)
         return validated_plan_display
