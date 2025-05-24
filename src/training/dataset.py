@@ -80,15 +80,9 @@ class FloorPlanDataset(Dataset):
 
         # Apply transform if any (e.g., data augmentation)
         if self.transform:
-            # Note: Applying the same random transform to both mask and plan is tricky.
-            # For simple transforms like ToTensor and Normalize, this is fine.
-            # For spatial transforms (rotate, crop), need to apply the same transform instance.
-            # Assuming transform handles multiple inputs or is simple.
-            # Let's apply transform to images before converting to tensors if it's a spatial transform,
-            # or apply to tensors if it's a tensor transform.
-            # For now, assume transform is simple (like normalization) applied after tensor conversion.
-            # A proper implementation needs careful handling of paired transforms.
-            pass # transform logic would go here if needed
+            # Apply transforms to both site_mask_tensor and floor_plan_tensor
+            transformed = self.transform(site_mask_tensor, floor_plan_tensor)
+            site_mask_tensor, floor_plan_tensor = transformed
 
         return {
             'condition': site_mask_tensor,
@@ -99,21 +93,31 @@ class FloorPlanDataset(Dataset):
 
     def generate_prompt(self, metadata):
         """メタデータからプロンプト生成"""
-        # Example prompt generation based on metadata
+        # Enhanced prompt generation based on metadata
         grid_size = metadata.get('site_grid_size', ('N/A', 'N/A'))
         area = metadata.get('total_area_sqm', 0)
         rooms = metadata.get('room_count', 'N/A')
         source_pdf = metadata.get('source_pdf', 'unknown')
-
+        
         prompt = f"site_size_{grid_size[0]}x{grid_size[1]}, "
         if area is not None:
             prompt += f"total_area_{area:.0f}sqm, "
         prompt += f"rooms_{rooms}, "
         prompt += f"source_{os.path.splitext(source_pdf)[0].replace('.','_')}, " # Clean up source name for prompt
+        
+        room_types = metadata.get('room_types', [])
+        if room_types:
+            prompt += f"rooms_{'_'.join(room_types)}, "
+            
+        floor_count = metadata.get('floor_count', None)
+        if floor_count:
+            prompt += f"{floor_count}_floor, "
+            
+        style = metadata.get('style', None)
+        if style:
+            prompt += f"{style}_style, "
+            
         prompt += "japanese_house, 910mm_grid, architectural_plan"
-
-        # Add more details from metadata if available and relevant for conditioning
-        # e.g., style, number of floors, specific room types (if detected)
 
         return prompt
 
@@ -127,4 +131,4 @@ class FloorPlanDataset(Dataset):
 #          # Apply normalization if needed
 #          # normalize = transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]) # Example for 3 channel image
 #          # image_tensor = normalize(image_tensor)
-#          return image_tensor, mask_tensor 
+#          return image_tensor, mask_tensor  

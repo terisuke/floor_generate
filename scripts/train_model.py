@@ -23,8 +23,10 @@ def main():
                         help="Batch size for training.")
     parser.add_argument("--output_model_dir", type=str, default="models/lora_weights",
                         help="Directory to save trained LoRA model weights.")
-    # Add argument for loading pre-trained weights if needed for fine-tuning/resume
-    # parser.add_argument("--load_weights_from", type=str, default=None, help="Path to pretrained LoRA weights to continue training.")
+    parser.add_argument("--load_weights_from", type=str, default=None, 
+                        help="Path to pretrained LoRA weights to continue training.")
+    parser.add_argument("--learning_rate", type=float, default=1e-4,
+                        help="Learning rate for the optimizer.")
 
     args = parser.parse_args()
 
@@ -51,8 +53,9 @@ def main():
 
     print("Initializing LoRA Trainer...")
     trainer = LoRATrainer()
-    # if args.load_weights_from:
-    #    trainer.load_lora_weights(args.load_weights_from) # Implement this in LoRATrainer
+    if args.load_weights_from:
+        print(f"Loading pre-trained weights from {args.load_weights_from}")
+        trainer.load_lora_weights(args.load_weights_from)
 
     print(f"Starting training for {args.epochs} epochs...")
     try:
@@ -65,4 +68,4 @@ def main():
         traceback.print_exc()
 
 if __name__ == "__main__":
-    main() 
+    main()  
