@@ -20,7 +20,7 @@ brew install python@3.12 git cmake pkg-config poppler tesseract
 echo "Basic tools installed."
 
 # 2. Python仮想環境
-PYTHON_VERSION=3.12
+PYTHON_VERSION=3.11
 VENV_NAME="floorplan_env"
 
 if [ -d "$VENV_NAME" ]; then
@@ -78,4 +78,4 @@ echo "Consider running: pip install -r $REQUIREMENTS_FILE after activating the v
 echo "\nIMPORTANT: FreeCAD application (version 0.22 or as per requirements) should be installed separately."
 echo "The FreeCAD Python bindings might need specific setup depending on your FreeCAD installation method."
 
-echo "\nSetup script finished. Please activate the virtual environment and install Python packages."        
+echo "\nSetup script finished. Please activate the virtual environment and install Python packages."          
