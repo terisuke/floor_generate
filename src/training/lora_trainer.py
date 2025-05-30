@@ -1,3 +1,11 @@
+import sys
+import os
+
+# プロジェクトのルートディレクトリを取得し、sys.pathに追加
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
+
 import patch_diffusers
 patch_diffusers.apply_patches()
 
@@ -6,7 +14,6 @@ from peft import LoraConfig, get_peft_model
 import torch
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
-import os
 
 class LoRATrainer:
     def __init__(self):
@@ -251,7 +258,8 @@ class LoRATrainer:
         if self.device == "cpu":
             dtype = torch.float32
         else:
-            dtype = torch.float16
+            print("MPS device detected. Forcing float32 for inference due to potential MPS issues with float16.")
+            dtype = torch.float32
         
         if hasattr(self.unet, "get_base_model"):
             unet_for_pipeline = self.unet.get_base_model()

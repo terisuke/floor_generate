@@ -1,11 +1,17 @@
+import sys
+import os
+
+# プロジェクトのルートディレクトリを取得し、sys.pathに追加
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
+
 import patch_diffusers
 patch_diffusers.apply_patches()
 
 import torch
 import numpy as np
 from PIL import Image
-import os
-import sys
 import cv2
 import io
 
@@ -151,8 +157,9 @@ class FloorPlanGenerator:
             
         validated_plan = np.ascontiguousarray(validated_plan, dtype=np.uint8)
         
-        cv2.line(validated_plan, (0, 0), (validated_plan.shape[1], validated_plan.shape[0]), 
-                (0, 255, 0), 2)
+        # 緑の斜線を削除 - これはデバッグ用のコードだった
+        # cv2.line(validated_plan, (0, 0), (validated_plan.shape[1], validated_plan.shape[0]), 
+        #         (0, 255, 0), 2)
         
         return validated_plan
     

@@ -6,3 +6,4 @@ dist/
 .vscode/
 .idea/
 floorplan_env/
+__pycache__/

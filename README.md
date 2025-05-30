@@ -248,6 +248,12 @@ tokenizers==0.13.3
 
 ```python
 # スクリプトの先頭に追加（必須）
+import sys
+import os
+# プロジェクトのルートディレクトリを取得し、sys.pathに追加
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')) # スクリプトの場所に応じて'..', '..'の数を調整
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
 import patch_diffusers
 patch_diffusers.apply_patches()
 ```

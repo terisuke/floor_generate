@@ -113,16 +113,25 @@ class ArchitecturalConstraints:
                 # This is not quite right. The constraint should be ON sum_neighbor_walls IF wall_vars[r][c] is 1.
 
                 # Constraint: if wall_vars[r][c] is true, then sum(neighbors) must be in {0,2,4}
-                # This formulation seems more about structural validity than placement based on an input image.
-                # The initial_grid implies where walls *should* be.
-                # The repair objective will handle matching initial_grid.
-                # Let's ensure the structure is locally valid for wall cells.
-                # (wall_vars[r][c] == 1) => (sum_neighbor_walls in [0,2,4])
-                # We can create an intermediate boolean for sum_neighbor_walls in [0,2,4]
-                allowed_sums = self.model.NewBoolVar(f'wall_sum_allowed_{r}_{c}')
-                self.model.AddAllowedAssignments([sum_neighbor_walls], [[0],[2],[4]]).OnlyEnforceIf(allowed_sums)
-                self.model.AddForbiddenAssignments([sum_neighbor_walls], [[0],[2],[4]]).OnlyEnforceIf(allowed_sums.Not())
-                self.model.AddImplication(wall_vars[r][c], allowed_sums)
+                # We need to handle this constraint differently since sum_neighbor_walls is an expression
+                # Create intermediate variable for the sum
+                sum_var = self.model.NewIntVar(0, 4, f'sum_neighbors_{r}_{c}')
+                self.model.Add(sum_var == sum(neighbor_wall_vars))
+                
+                # Create boolean variables for each allowed value
+                is_zero = self.model.NewBoolVar(f'is_zero_{r}_{c}')
+                is_two = self.model.NewBoolVar(f'is_two_{r}_{c}')
+                is_four = self.model.NewBoolVar(f'is_four_{r}_{c}')
+                
+                self.model.Add(sum_var == 0).OnlyEnforceIf(is_zero)
+                self.model.Add(sum_var != 0).OnlyEnforceIf(is_zero.Not())
+                self.model.Add(sum_var == 2).OnlyEnforceIf(is_two)
+                self.model.Add(sum_var != 2).OnlyEnforceIf(is_two.Not())
+                self.model.Add(sum_var == 4).OnlyEnforceIf(is_four)
+                self.model.Add(sum_var != 4).OnlyEnforceIf(is_four.Not())
+                
+                # At least one must be true if wall_vars[r][c] is true
+                self.model.AddBoolOr(is_zero, is_two, is_four).OnlyEnforceIf(wall_vars[r][c])
         print("Wall constraints added.")
 
     def add_room_constraints(self, variables, initial_grid):

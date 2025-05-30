@@ -198,12 +198,26 @@ class FloorPlanApp:
                 model_data = validated_plan_data
             else:
                 # Create simplified data from raw plan
+                # Assuming raw_plan is a 3-channel image from the current AI model
+                # We'll primarily use the first channel (e.g., for walls)
+                # and provide empty or default for others as they are not directly generated as separate channels by SD
                 model_data = {
-                    'walls': (raw_plan[:,:,0] > 128).astype(int),
-                    'openings': (raw_plan[:,:,1] > 128).astype(int),
-                    'stairs': (raw_plan[:,:,2] > 128).astype(int),
-                    'rooms': (raw_plan[:,:,3] > 128).astype(int),
+                    'walls': np.zeros(raw_plan.shape[:2], dtype=int),
+                    'openings': np.zeros(raw_plan.shape[:2], dtype=int), # Placeholder
+                    'stairs': np.zeros(raw_plan.shape[:2], dtype=int),   # Placeholder
+                    'rooms': np.zeros(raw_plan.shape[:2], dtype=int),    # Placeholder
                 }
+                if raw_plan.ndim == 3 and raw_plan.shape[2] > 0:
+                    model_data['walls'] = (raw_plan[:,:,0] > 128).astype(int)
+                if raw_plan.ndim == 3 and raw_plan.shape[2] > 1:
+                    # If you expect openings on the second channel, uncomment and adjust
+                    # model_data['openings'] = (raw_plan[:,:,1] > 128).astype(int)
+                    pass # Placeholder for now
+                if raw_plan.ndim == 3 and raw_plan.shape[2] > 2:
+                    # If you expect stairs on the third channel, uncomment and adjust
+                    # model_data['stairs'] = (raw_plan[:,:,2] > 128).astype(int)
+                    pass # Placeholder for now
+                # Rooms (alpha channel) are not expected from a 3-channel image
             
             metadata = {
                 'site_grid_size': (width, height),
@@ -263,7 +277,8 @@ class FloorPlanApp:
         # Ensure the array is contiguous and in the correct format
         display_image = np.ascontiguousarray(display_image, dtype=np.uint8)
         
-        cv2.line(display_image, (0, 0), (width-1, height-1), (0, 255, 0), 1)
+        # デバッグ用の緑の斜線を削除
+        # cv2.line(display_image, (0, 0), (width-1, height-1), (0, 255, 0), 1)
         
         return display_image
         

@@ -357,15 +357,53 @@ class FreeCADGenerator:
         return building
 
     def create_3d_model(self, validated_plan_grids_dict, metadata, output_path):
-        """検証済み平面図から3Dモデル生成
-           validated_plan_grids_dict: {'walls': grid, 'openings': grid, 'stairs': grid, 'rooms': grid}
-        """
+        """検証済み平面図から3Dモデル生成"""
         print(f"Starting 3D model generation for output: {output_path}")
-        if App.newDocument is None:
-            print("FreeCAD environment not properly initialized (App.newDocument is None).")
-            return None
-            
-        self.doc = App.newDocument("FloorPlanMVP")
+
+        if App is None:
+            print("Error: FreeCAD module is not available. Cannot create 3D model.")
+            os.makedirs(os.path.dirname(output_path), exist_ok=True)
+            # Create a uniquely named dummy file to avoid overwriting if called multiple times
+            dummy_fcstd_path = os.path.join(os.path.dirname(output_path), f"dummy_fc_unavailable_{os.path.basename(output_path)}")
+            try:
+                with open(dummy_fcstd_path, 'w') as f:
+                    f.write("FreeCAD not available. This is a placeholder file.")
+            except Exception as e_file:
+                print(f"Error creating dummy file: {e_file}")
+                # If dummy file creation fails, return path that might not exist but follows pattern
+                dummy_fcstd_path = output_path # Fallback to original path for return structure
+            return {
+                'fcstd_path': dummy_fcstd_path,
+                'components': {},
+                'error': "FreeCAD module not available."
+            }
+
+        # 1. 新規文書作成
+        # App is not None here, so it's safe to call App.newDocument
+        doc_name = f"FloorPlan_{metadata.get('site_grid_size', (0,0))[0]}x{metadata.get('site_grid_size', (0,0))[1]}"
+        try:
+            self.doc = App.newDocument(doc_name)
+        except Exception as e_doc_create: # Catch any potential error during newDocument
+            print(f"Error: Exception while creating new FreeCAD document '{doc_name}': {e_doc_create}")
+            self.doc = None # Ensure self.doc is None if creation fails
+
+        if self.doc is None:
+             print(f"Error: Failed to create new FreeCAD document: '{doc_name}'. App.newDocument might have returned None or raised an exception.")
+             os.makedirs(os.path.dirname(output_path), exist_ok=True)
+             dummy_fcstd_path = os.path.join(os.path.dirname(output_path), f"dummy_doc_fail_{os.path.basename(output_path)}")
+             try:
+                 with open(dummy_fcstd_path, 'w') as f:
+                     f.write("Failed to create FreeCAD document. This is a placeholder file.")
+             except Exception as e_file_doc_fail:
+                 print(f"Error creating dummy file on doc creation failure: {e_file_doc_fail}")
+                 dummy_fcstd_path = output_path
+             return {
+                'fcstd_path': dummy_fcstd_path,
+                'components': {},
+                'error': "Failed to create FreeCAD document."
+            }
+        
+        print(f"Successfully created FreeCAD document: {self.doc.Name}")
 
         grid_to_mm_scale = self.create_scale_converter(metadata)
 
