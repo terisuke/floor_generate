@@ -15,28 +15,25 @@ class FloorPlanDataset(Dataset):
     def load_data_pairs(self):
         """学習データペアを読み込み"""
         pairs = []
-        # Assuming data pairs are saved in subdirectories like data_dir/pair_0000, data_dir/pair_0001, etc.
-        # Each subdirectory contains site_mask.png, floor_plan.png, metadata.json
-        pair_dirs = glob(f"{self.data_dir}/pair_*")
-        print(f"Found {len(pair_dirs)} data pairs in {self.data_dir}")
+        glob_json = glob(f"{self.data_dir}/*.json")
+        print(f"Found {len(glob_json)} json in {self.data_dir}")
 
-        for pair_dir in pair_dirs:
-            metadata_path = f"{pair_dir}/metadata.json"
-            site_mask_path = f"{pair_dir}/site_mask.png"
-            floor_plan_path = f"{pair_dir}/floor_plan.png"
-
-            if os.path.exists(metadata_path) and os.path.exists(site_mask_path) and os.path.exists(floor_plan_path):
+        for json_path in glob_json:
+            file_name = os.path.splitext(os.path.basename(json_path))[0]
+            png_path = f"{self.data_dir}/{file_name}.png"
+            if os.path.exists(png_path):
                 try:
-                    with open(metadata_path, 'r') as f:
+                    with open(json_path, 'r') as f:
                         metadata = json.load(f)
                     pairs.append({
-                        'dir': pair_dir,
-                        'metadata': metadata
+                        'metadata': metadata,
+                        'png_path': png_path,
                     })
                 except Exception as e:
-                    print(f"Error loading metadata from {metadata_path}: {e}")
+                    print(f"Error loading metadata from {json_path}: {e}")
+
             else:
-                 print(f"Warning: Incomplete data pair found in {pair_dir}. Skipping.")
+                 print(f"Warning: Incomplete {png_path} found. Skipping.")
 
         print(f"Loaded {len(pairs)} valid data pairs.")
         return pairs
