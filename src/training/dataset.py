@@ -15,25 +15,26 @@ class FloorPlanDataset(Dataset):
     def load_data_pairs(self):
         """学習データペアを読み込み"""
         pairs = []
-        glob_json = glob(f"{self.data_dir}/*.json")
-        print(f"Found {len(glob_json)} json in {self.data_dir}")
+        glob_png = glob(f"{self.data_dir}/*.png")
+        print(f"Found {len(glob_png)} json in {self.data_dir}")
 
-        for json_path in glob_json:
-            file_name = os.path.splitext(os.path.basename(json_path))[0]
-            png_path = f"{self.data_dir}/{file_name}.png"
-            if os.path.exists(png_path):
+        for png_path in glob_png:
+            file_name = os.path.splitext(os.path.basename(png_path))[0]
+            elements_json_path = f"{self.data_dir}/{file_name}_elements.json"
+            integrated_json_path = f"{self.data_dir}/{file_name}_integrated.json"
+            if os.path.exists(integrated_json_path):
                 try:
-                    with open(json_path, 'r') as f:
+                    with open(integrated_json_path, 'r') as f:
                         metadata = json.load(f)
                     pairs.append({
                         'metadata': metadata,
                         'png_path': png_path,
                     })
                 except Exception as e:
-                    print(f"Error loading metadata from {json_path}: {e}")
+                    print(f"Error loading metadata from {integrated_json_path}: {e}")
 
             else:
-                 print(f"Warning: Incomplete {png_path} found. Skipping.")
+                 print(f"Warning: Incomplete {integrated_json_path} found. Skipping.")
 
         print(f"Loaded {len(pairs)} valid data pairs.")
         return pairs
