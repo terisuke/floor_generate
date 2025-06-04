@@ -98,44 +98,125 @@ class FloorPlanDataset(Dataset):
         """メタデータからプロンプト生成"""
         # Example prompt generation based on metadata with robust error handling
         try:
-            grid_size = metadata.get('site_grid_size', None)
-            if grid_size is None or not isinstance(grid_size, (list, tuple)) or len(grid_size) < 2:
-                grid_size = ('10', '10')  # Default values if missing or invalid
-                
-            area = metadata.get('total_area_sqm', 0)
-            if area is None:
-                area = 100  # Default area
-                
-            rooms = metadata.get('room_count', 'N/A')
-            if rooms is None:
-                rooms = '4'  # Default room count
-                
-            source_pdf = metadata.get('source_pdf', 'unknown')
-            if source_pdf is None:
-                source_pdf = 'unknown'
-                
-            prompt = f"site_size_{grid_size[0]}x{grid_size[1]}, "
-            prompt += f"total_area_{int(area) if isinstance(area, (int, float)) else area}sqm, "
-            prompt += f"rooms_{rooms}, "
+            annotation_metadata = metadata.get('annotation_metadata', None)
+            if annotation_metadata is None or not isinstance(annotation_metadata, dict) or len(annotation_metadata) < 2:
+                annotation_metadata = {
+                    'annotator_version': 'v2.0_structural_focus',
+                    'annotation_time': 'unknown',
+                    'element_count': {
+                        'total_elements': 0,
+                        'stair_count': 0,
+                        'entrance_count': 0,
+                        'balcony_count': 0
+                    },
+                    'floor_type': '1F',
+                    'grid_resolution': '6x10',
+                    'drawing_scale': '1:100'
+                }
+
+
+            training_hints = metadata.get('training_hints', None)
+            if training_hints is None or not isinstance(training_hints, dict) or len(training_hints) < 2:
+                training_hints = {
+                    'total_area_grids': 60,
+                    'room_count': 3,
+                    'has_entrance': True,
+                    'has_stair': True,
+                    'has_balcony': False
+                }
             
-            # Clean up source name for prompt
-            try:
-                source_name = os.path.splitext(source_pdf)[0].replace('.','_')
-            except (AttributeError, IndexError):
-                source_name = 'unknown'
-                
-            prompt += f"source_{source_name}, "
-            prompt += "japanese_house, 910mm_grid, architectural_plan"
+            original_pdf = metadata.get('original_pdf', 'unknown')
+            if original_pdf is None:
+                original_pdf = 'unknown'
+
+            # グリッドサイズ
+            grid_dimensions = metadata.get('grid_dimensions', None)
+            if grid_dimensions is None or not isinstance(grid_dimensions, dict) or len(grid_dimensions) < 2:
+                grid_dimensions = {
+                    'width_grids': 10,
+                    'height_grids': 10
+                }
             
-            # Add more details from metadata if available and relevant for conditioning
-            style = metadata.get('style', None)
-            if style:
-                prompt += f", style_{style}"
-                
-            floor_count = metadata.get('floor_count', None)
-            if floor_count:
-                prompt += f", floors_{floor_count}"
-                
+            # 縮尺
+            scale_info = metadata.get('scale_info', None)
+            if scale_info is None or not isinstance(scale_info, dict) or len(scale_info) < 2:
+                scale_info = {
+                    'drawing_scale': '1:100',
+                    'grid_mm': 910,
+                    'grid_px': 107.5
+                }
+
+            # 階数
+            floor = metadata.get('floor', None)
+            if floor is None:
+                floor = '1F'
+
+            # 建物のコンテキスト
+            building_context = metadata.get('building_context', None)
+            if building_context is None or not isinstance(building_context, dict) or len(building_context) < 2:
+                building_context = {
+                    'type': 'single_family_house',
+                    'floors_total': 2,
+                    'current_floor': floor,
+                    'typical_patterns': {
+                        '1F': ['entrance_area', 'stair', 'public_living_space', 'wet_areas', 'storage_zones'],
+                        '2F': ['stair', 'private_sleeping_areas', 'work_space', 'utility_area', 'balcony']
+                    },
+                    'stair_patterns': {
+                        'vertical_alignment': 'critical',
+                        'u_turn_benefit': 'Space efficiency on 1F for toilet/storage',
+                        'size_variation': '1F can have half-width stairs in U-turn configuration'
+                    }
+                }
+
+
+            # 居室
+            zones = metadata.get('zones', None)
+            if zones is None or not isinstance(zones, list) or len(zones) < 2:
+                zones = [
+                    {'type': 'living', 'approximate_grids': 17, 'priority': 1},
+                    {'type': 'private', 'approximate_grids': 14, 'priority': 2},
+                    {'type': 'service', 'approximate_grids': 7, 'priority': 3},
+                ]
+
+            # プロンプト生成
+            prompt_parts = []
+            prompt_parts.append(f"grid_{annotation_metadata['grid_resolution']}")
+            prompt_parts.append(f"area_{training_hints['total_area_grids']}grids")
+            prompt_parts.append(f"scale_{scale_info['drawing_scale']}")
+            prompt_parts.append(f"floor_{floor}")
+            prompt_parts.append(f"rooms_{training_hints['room_count']}")
+
+            if "entrance" in training_hints['floor_constraints']['prohibited_elements']:
+                prompt_parts.append("entrance_prohibited")
+            elif "entrance" in training_hints['floor_constraints']['required_elements'] or training_hints['has_entrance']:
+                prompt_parts.append("entrance_required")
+
+            if "stair" in training_hints['floor_constraints']['prohibited_elements']:
+                prompt_parts.append("stair_prohibited")
+            elif "stair" in training_hints['floor_constraints']['required_elements'] or training_hints['has_stair']:
+                prompt_parts.append("stair_required")
+
+            if "balcony" in training_hints['floor_constraints']['prohibited_elements']:
+                prompt_parts.append("balcony_prohibited")
+            elif "balcony" in training_hints['floor_constraints']['required_elements'] or training_hints['has_balcony']:
+                prompt_parts.append("balcony_required")
+
+            if 'living' in zones:
+                idx_living = zones.index(next(z for z in zones if z['type'] == 'living'))
+                prompt_parts.append(f"living_{zones[idx_living]['approximate_grids']}grids")
+            if 'private' in zones:
+                idx_private = zones.index(next(z for z in zones if z['type'] == 'private'))
+                prompt_parts.append(f"private_{zones[idx_private]['approximate_grids']}grids")
+            if 'service' in zones:
+                idx_service = zones.index(next(z for z in zones if z['type'] == 'service'))
+                prompt_parts.append(f"service_{zones[idx_service]['approximate_grids']}grids")
+
+            prompt_parts.append("japanese_house")
+            prompt_parts.append(f"{scale_info['grid_mm']}mm_grid")
+            prompt_parts.append("architectural_plan")
+
+            prompt = ", ".join(prompt_parts)
             return prompt
             
         except Exception as e:

@@ -9,4 +9,5 @@ floorplan_env/
 __pycache__/
 .python-version
 data/training/integrated/*.json
+data/training/elements/*.json
 data/training/images/*.png
