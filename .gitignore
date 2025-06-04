@@ -8,5 +8,5 @@ dist/
 floorplan_env/
 __pycache__/
 .python-version
-data/training/*.json
-data/training/*.png
+data/training/integrated/*.json
+data/training/images/*.png
