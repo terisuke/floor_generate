@@ -11,3 +11,7 @@ __pycache__/
 data/training/integrated/*.json
 data/training/elements/*.json
 data/training/images/*.png
+data/training/pair_*/*.json
+data/training/pair_*/*.png
+data/extracted/*.json
+outputs/*
