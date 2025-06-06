@@ -779,7 +779,7 @@ class TrainingDataGenerator:
                 structural_elements = [
                     {"type": "stair", "grid_x": 1.0, "grid_y": 1.0, "grid_width": 2.0, "grid_height": 1.0, "name": "stair_1"},
                     {"type": "entrance", "grid_x": 8.0, "grid_y": 8.0, "grid_width": 2.0, "grid_height": 2.0, "name": "entrance_2"},
-                    {"type": "balcony", "grid_x": 0.0, "grid_y": 7.0, "grid_width": 3.0, "grid_height": 3.0, "name": "entrance_2"}
+                    {"type": "balcony", "grid_x": 0.0, "grid_y": 7.0, "grid_width": 3.0, "grid_height": 3.0, "name": "balcony_3"}
                 ]
         
             # 幅高さが小数点1位まであるため、グリッドの10倍で描画
