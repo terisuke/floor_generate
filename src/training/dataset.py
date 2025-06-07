@@ -15,8 +15,10 @@ class FloorPlanDataset(Dataset):
     transform : callable
     pairs : list[dict]
     organize_training_data : bool
+    target_size : tuple[int, int]
+    channels : int
 
-    def __init__(self, data_dir, transform=None, organize_training_data=False):
+    def __init__(self, data_dir, transform=None, organize_training_data=False, target_size=(256, 256)):
         """
         Args:
             data_dir: データディレクトリのパス
@@ -26,7 +28,8 @@ class FloorPlanDataset(Dataset):
         self.data_dir = data_dir
         self.transform = transform
         self.organize_training_data = organize_training_data
-
+        self.target_size = target_size
+        self.channels = 4
         if organize_training_data:
             self.organize_data()
             
@@ -168,48 +171,46 @@ class FloorPlanDataset(Dataset):
         metadata = pair['metadata']
 
         # 画像読み込み
-        # site_mask is grayscale, floor_plan is RGBA
         site_mask = cv2.imread(f"{dir_path}/site_mask.png", cv2.IMREAD_GRAYSCALE)
         floor_plan = cv2.imread(f"{dir_path}/floor_plan.png", cv2.IMREAD_UNCHANGED)
 
         if site_mask is None or floor_plan is None:
-            # Handle error - ideally, load_data_pairs should ensure files exist
             print(f"Error loading images for pair {dir_path}. Returning None.")
-            return None # Or raise an error, or return a placeholder
+            return None
 
         # 正規化 (0-1)
-        # Ensure site_mask is HxW (no channel dim for grayscale input)
         site_mask = site_mask.astype(np.float32) / 255.0
-        # Ensure floor_plan is CHW and float32
         floor_plan = floor_plan.astype(np.float32) / 255.0
 
+        # 4チャンネルのテンソルを作成
+        # [walls, openings, stairs, rooms] の形式
+        channels = np.zeros((self.channels, *self.target_size), dtype=np.float32)
 
-        # Convert to PyTorch tensors
-        # site_mask: [H, W] -> [1, H, W] for consistency with some model inputs
-        site_mask_tensor = torch.from_numpy(site_mask).unsqueeze(0)
-        # floor_plan: [H, W, C] -> [C, H, W] for PyTorch convention
-        floor_plan_tensor = torch.from_numpy(floor_plan).permute(2, 0, 1)
+        # 現在の3チャンネルデータを4チャンネルにマッピング
+        # チャンネル0: 空のチャンネル（必要に応じて後で実装）
+        channels[0] = np.zeros(self.target_size, dtype=np.float32)
+        
+        # チャンネル1: entrance（玄関）の情報
+        channels[1] = floor_plan[:, :, 1]  # entranceチャンネル
+        
+        # チャンネル2: stairs（階段）の情報
+        channels[2] = floor_plan[:, :, 0]  # stairsチャンネル
+        
+        # チャンネル3: balcony（バルコニー）の情報
+        channels[3] = floor_plan[:, :, 2]  # balconyチャンネル
+
+        # PyTorchテンソルに変換
+        site_mask_tensor = torch.from_numpy(site_mask).unsqueeze(0)  # [1, H, W]
+        floor_plan_tensor = torch.from_numpy(channels)  # [4, H, W]
 
         # プロンプト生成
         prompt = self.generate_prompt(metadata)
-
-        # Apply transform if any (e.g., data augmentation)
-        if self.transform:
-            # Note: Applying the same random transform to both mask and plan is tricky.
-            # For simple transforms like ToTensor and Normalize, this is fine.
-            # For spatial transforms (rotate, crop), need to apply the same transform instance.
-            # Assuming transform handles multiple inputs or is simple.
-            # Let's apply transform to images before converting to tensors if it's a spatial transform,
-            # or apply to tensors if it's a tensor transform.
-            # For now, assume transform is simple (like normalization) applied after tensor conversion.
-            # A proper implementation needs careful handling of paired transforms.
-            pass # transform logic would go here if needed
 
         return {
             'condition': site_mask_tensor,
             'target': floor_plan_tensor,
             'prompt': prompt,
-            'metadata': metadata # Optional: keep metadata for evaluation/debugging
+            'metadata': metadata
         }
 
     def generate_train_pairs(self):
