@@ -51,7 +51,7 @@ def custom_collate_fn(batch: List[Optional[Dict[str, Any]]]) -> Dict[str, Any]:
 
 def main():
     parser = argparse.ArgumentParser(description="Train LoRA model for floor plan generation.")
-    parser.add_argument("--data_dir", type=str, default="data/training",
+    parser.add_argument("--data_dir", type=str, default="data",
                         help="Directory containing the training data pairs.")
     parser.add_argument("--epochs", type=int, default=20,
                         help="Number of training epochs.")
@@ -74,7 +74,7 @@ def main():
         print(f"Created model output directory: {args.output_model_dir}")
 
     print("Initializing dataset and dataloader...")
-    train_dataset = FloorPlanDataset(data_dir=args.data_dir, transform=None)
+    train_dataset = FloorPlanDataset(data_dir=args.data_dir, transform=None, organize_training_data=True)
     
     if len(train_dataset) == 0:
         print(f"No training data found in {args.data_dir}. Exiting.")

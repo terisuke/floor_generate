@@ -36,6 +36,45 @@ class TrainingDataGenerator:
         
         self.opening_size = 8
 
+    def process_floor_plans(self, train_dir):
+        """
+        Process floor plans to generate training data
+        """
+
+        logger.info(f"Processing PDF collection from {train_dir}")
+
+        # フォルダをすべて読み込む
+        pair_dirs = glob(f"{train_dir}/*")
+        logger.info(f"Found {len(pair_dirs)} folders")
+
+        success_count = 0
+
+        for plan_dir in pair_dirs:
+            try:
+                logger.info(f"Processing folder: {plan_dir}")
+
+                # フォルダに meta_integrated.json があるかを確認する
+                meta_file = f"{plan_dir}/meta_integrated.json"
+                if not os.path.exists(meta_file):
+                    logger.warning(f"meta_integrated.json not found in {plan_dir}")
+                    continue
+
+                # meta_integrated.json を読み込む
+                with open(meta_file, 'r') as f:
+                    meta_data = json.load(f)
+
+                # meta_integrated.json をもとに img_base.png を生成する
+                self.generate_train_images(meta_data, f"{plan_dir}/img_base.png")
+            
+            except Exception as e:
+                logger.error(f"Error processing folder: {plan_dir}: {e}")
+                import traceback
+                traceback.print_exc()
+                break
+
+        logger.info(f"Successfully processed {success_count}/{len(pair_dirs)} folders")
+        return success_count
+
     def process_pdf_collection(self, pdf_dir, output_dir):
         """
         Process a collection of PDF floor plans to generate training data
@@ -749,72 +788,3 @@ class TrainingDataGenerator:
     # but extracting vector data reliably from arbitrary architectural PDFs is challenging.
     # For the MVP, the placeholder approach for image generation and element separation is pragmatic,
     # but acknowledges this deviation from the detailed requirement steps (PDF->SVG->PNG->Separate).
-
-    def generate_train_images(self, metadata:dict, png_path:str):
-        """
-        '*_integrated.json' metadataから、256x256pxの *_floor_plan.png, *_site_mask.png, *_conv.png を生成する
-
-        Args:
-            metadata: integrated metadata (json)
-            png_path: base floor image(png) path 
-            
-        Returns:
-            result_pair: success
-            None: failure
-        """
-        try:
-            grid_dimensions = metadata.get('grid_dimensions', None)
-            if grid_dimensions is None or not isinstance(grid_dimensions, dict) or len(grid_dimensions) < 2:
-                grid_dimensions = {'width_grids': 10, 'height_grids': 10}
-
-            width_grids = grid_dimensions['width_grids']
-            height_grids = grid_dimensions['height_grids']
-
-            img_base = cv2.imread(png_path)
-            img_conv = img_base.copy()
-            img_conv = cv2.resize(img_conv, (width_grids*10, height_grids*10))
-
-            structural_elements = metadata.get('structural_elements', None)
-            if structural_elements is None or not isinstance(structural_elements, list):
-                structural_elements = [
-                    {"type": "stair", "grid_x": 1.0, "grid_y": 1.0, "grid_width": 2.0, "grid_height": 1.0, "name": "stair_1"},
-                    {"type": "entrance", "grid_x": 8.0, "grid_y": 8.0, "grid_width": 2.0, "grid_height": 2.0, "name": "entrance_2"},
-                    {"type": "balcony", "grid_x": 0.0, "grid_y": 7.0, "grid_width": 3.0, "grid_height": 3.0, "name": "balcony_3"}
-                ]
-        
-            # 幅高さが小数点1位まであるため、グリッドの10倍で描画
-            img_plan = np.zeros((height_grids*10, width_grids*10, 3), dtype=np.uint8)
-            img_mask = np.ones((height_grids*10, width_grids*10, 3), dtype=np.uint8) * 255
-            for item in structural_elements:
-                element_type = item['type']
-                grid_x1 = round(item['grid_x'] * 10)
-                grid_y1 = round(item['grid_y'] * 10)
-                grid_x2 = round((item['grid_x'] + item['grid_width']) * 10)
-                grid_y2 = round((item['grid_y'] + item['grid_height']) * 10)
-                # 階段は赤、玄関は緑、バルコニーは青、他は黒
-                fill_color_dict = { "stair": (255, 0, 0), "entrance": (0, 255, 0), "balcony": (0, 0, 255) }
-                fill_color = fill_color_dict.get(element_type, (0, 0, 0))
-                cv2.rectangle(img_plan, (grid_x1, grid_y1), (grid_x2, grid_y2), fill_color, thickness=-1)
-                cv2.rectangle(img_conv, (grid_x1, grid_y1), (grid_x2, grid_y2), fill_color, thickness=-1)
-
-            img_plan = cv2.resize(img_plan, (256, 256))
-            img_mask = cv2.resize(img_mask, (256, 256))
-            img_conv = cv2.resize(img_conv, (256, 256))
-
-            cv2.imwrite(f"{png_path.replace('.png', '_floor_plan.png')}", img_plan)
-            cv2.imwrite(f"{png_path.replace('.png', '_site_mask.png')}", img_mask)
-            cv2.imwrite(f"{png_path.replace('.png', '_conv.png')}", img_conv)
-
-            result_pair = {
-                "floor_plan": img_plan,
-                "site_mask": img_mask,
-                "conv": img_conv,
-                "metadata": metadata
-            }
-
-            return result_pair
-
-        except Exception as e:
-            print(f"Error generate train images from metadata: {e}")
-
-            return None

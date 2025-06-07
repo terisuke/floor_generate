@@ -11,11 +11,9 @@ if src_dir not in sys.path:
 from preprocessing.training_data_generator import TrainingDataGenerator
 
 def main():
-    parser = argparse.ArgumentParser(description="Prepare training data from PDF floor plans.")
-    parser.add_argument("--pdf_dir", type=str, default="data/raw_pdfs",
-                        help="Directory containing raw PDF floor plans.")
-    parser.add_argument("--output_dir", type=str, default="data/training",
-                        help="Directory to save the generated training data pairs.")
+    parser = argparse.ArgumentParser(description="Prepare training data from floor plans.")
+    parser.add_argument("--data_dir", type=str, default="data",
+                        help="Directory containing raw floor plans.")
     parser.add_argument("--target_width", type=int, default=256,
                         help="Target width for generated images.")
     parser.add_argument("--target_height", type=int, default=256,
@@ -24,31 +22,19 @@ def main():
     args = parser.parse_args()
 
     # Ensure output directory exists
-    if not os.path.exists(args.output_dir):
-        os.makedirs(args.output_dir)
-        print(f"Created output directory: {args.output_dir}")
-
-    if not os.path.exists(args.pdf_dir):
-        print(f"Error: PDF directory not found: {args.pdf_dir}")
-        print("Please ensure your PDF files are in the specified directory.")
-        # As per user instruction, PDFs were moved to data/raw_pdfs
-        # Let's create a dummy PDF in data/raw_pdfs if it's empty for testing purposes, 
-        # but only if the script is run without actual PDFs.
-        # This is more for robust testing than for production.
-        # For now, just error out if pdf_dir is empty or doesn't exist.
-        if not os.listdir(args.pdf_dir):
-             print(f"PDF directory {args.pdf_dir} is empty. No data to process.")
-        return
+    if not os.path.exists(args.data_dir):
+        os.makedirs(args.data_dir)
+        print(f"Created output directory: {args.data_dir}")
 
     print(f"Starting training data preparation...")
-    print(f"Input PDF directory: {args.pdf_dir}")
-    print(f"Output training data directory: {args.output_dir}")
+    print(f"Data directory: {args.data_dir}")
     print(f"Target image size: ({args.target_width}, {args.target_height})")
 
     generator = TrainingDataGenerator(target_size=(args.target_width, args.target_height))
     
     try:
-        successful_count = generator.process_pdf_collection(args.pdf_dir, args.output_dir)
+        successful_count = generator.process_floor_plans(args.data_dir)
+        # successful_count = generator.process_pdf_collection(args.pdf_dir, args.output_dir)
         print(f"\nTraining data preparation finished.")
         print(f"Successfully processed {successful_count} PDF files.")
         print(f"Training data pairs saved in: {args.output_dir}")

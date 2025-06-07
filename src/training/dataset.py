@@ -10,6 +10,12 @@ import shutil
 from pathlib import Path
 
 class FloorPlanDataset(Dataset):
+
+    data_dir : str
+    transform : callable
+    pairs : list[dict]
+    organize_training_data : bool
+
     def __init__(self, data_dir, transform=None, organize_training_data=False):
         """
         Args:
@@ -20,11 +26,12 @@ class FloorPlanDataset(Dataset):
         self.data_dir = data_dir
         self.transform = transform
         self.organize_training_data = organize_training_data
-        
+
         if organize_training_data:
             self.organize_data()
             
         self.pairs = self.load_data_pairs()
+        self.pairs = self.generate_train_pairs()
 
     def extract_floor_info(self, filename):
         """
@@ -117,57 +124,33 @@ class FloorPlanDataset(Dataset):
         """学習データペアを読み込み"""
         pairs = []
         
-        # 訓練データが整理されている場合は、trainingディレクトリから読み込む
-        if self.organize_training_data:
-            training_dir = os.path.join(self.data_dir, "training")
-            if os.path.exists(training_dir):
-                # 訓練データディレクトリ内の各フォルダを処理
-                for floor_dir in os.listdir(training_dir):
-                    floor_path = os.path.join(training_dir, floor_dir)
-                    if not os.path.isdir(floor_path):
-                        continue
+        # trainingディレクトリから読み込む
+        training_dir = os.path.join(self.data_dir, "training")
+        if os.path.exists(training_dir):
+            # 訓練データディレクトリ内の各フォルダを処理
+            for floor_dir in os.listdir(training_dir):
+                floor_path = os.path.join(training_dir, floor_dir)
+                if not os.path.isdir(floor_path):
+                    continue
+                    
+                img_base_path = os.path.join(floor_path, "img_base.png")
+                meta_integrated_path = os.path.join(floor_path, "meta_integrated.json")
+                
+                if not (os.path.exists(img_base_path) and os.path.exists(meta_integrated_path)):
+                    print(f"Warning: Incomplete data in {floor_dir}")
+                    continue
+                
+                try:
+                    with open(meta_integrated_path, 'r') as f:
+                        metadata = json.load(f)
                         
-                    img_base_path = os.path.join(floor_path, "img_base.png")
-                    meta_integrated_path = os.path.join(floor_path, "meta_integrated.json")
-                    
-                    if not (os.path.exists(img_base_path) and os.path.exists(meta_integrated_path)):
-                        print(f"Warning: Incomplete data in {floor_dir}")
-                        continue
-                    
-                    try:
-                        with open(meta_integrated_path, 'r') as f:
-                            metadata = json.load(f)
-                            
-                        pairs.append({
-                            'metadata': metadata,
-                            'dir': floor_path,
-                            'base_png': img_base_path
-                        })
-                    except Exception as e:
-                        print(f"Error loading metadata from {meta_integrated_path}: {e}")
-                        continue
-        else:
-            # 従来の方法でrawディレクトリから読み込む
-            glob_png = glob(f"{self.data_dir}/raw/*.png")
-            print(f"Found {len(glob_png)} png in {self.data_dir}")
-
-            for png_path in glob_png:
-                file_name = os.path.splitext(os.path.basename(png_path))[0]
-                integrated_json_path = f"{self.data_dir}/raw/{file_name}_integrated.json"
-                if os.path.exists(integrated_json_path):
-                    try:
-                        with open(integrated_json_path, 'r') as f:
-                            metadata = json.load(f)
-                            
-                        pairs.append({
-                            'metadata': metadata,
-                            'json_path': integrated_json_path,
-                            'base_png': png_path,
-                        })
-                    except Exception as e:
-                        print(f"Error loading metadata from {integrated_json_path}: {e}")
-                else:
-                    print(f"Warning: Incomplete {integrated_json_path} found. Skipping.")
+                    pairs.append({
+                        'dir_path': floor_path,
+                        'metadata': metadata,
+                        'base_png': img_base_path
+                    })
+                except Exception as e:
+                    print(f"Error loading metadata from {meta_integrated_path}: {e}")
                     continue
 
         print(f"Loaded {len(pairs)} valid data pairs.")
@@ -181,17 +164,17 @@ class FloorPlanDataset(Dataset):
             raise IndexError("Dataset index out of range")
             
         pair = self.pairs[idx]
-        pair_dir = pair['dir']
+        dir_path = pair['dir_path']
         metadata = pair['metadata']
 
         # 画像読み込み
         # site_mask is grayscale, floor_plan is RGBA
-        site_mask = cv2.imread(f"{pair_dir}/site_mask.png", cv2.IMREAD_GRAYSCALE)
-        floor_plan = cv2.imread(f"{pair_dir}/floor_plan.png", cv2.IMREAD_UNCHANGED)
+        site_mask = cv2.imread(f"{dir_path}/site_mask.png", cv2.IMREAD_GRAYSCALE)
+        floor_plan = cv2.imread(f"{dir_path}/floor_plan.png", cv2.IMREAD_UNCHANGED)
 
         if site_mask is None or floor_plan is None:
             # Handle error - ideally, load_data_pairs should ensure files exist
-            print(f"Error loading images for pair {pair_dir}. Returning None.")
+            print(f"Error loading images for pair {dir_path}. Returning None.")
             return None # Or raise an error, or return a placeholder
 
         # 正規化 (0-1)
@@ -228,6 +211,105 @@ class FloorPlanDataset(Dataset):
             'prompt': prompt,
             'metadata': metadata # Optional: keep metadata for evaluation/debugging
         }
+
+    def generate_train_pairs(self):
+        """
+        メタデータをもとに学習用画像データを生成する
+        """
+
+        new_pairs = []
+        try:
+            for pair in self.pairs:
+                result_pair = self.generate_train_images(pair['metadata'], pair['base_png'])
+                prompt = self.generate_prompt(pair['metadata'])
+                result_pair['prompt'] = prompt
+                if result_pair is not None:
+                    new_pairs.append(result_pair)
+                else:
+                    print(f"Error generate train images from metadata: {pair['metadata']}")
+                    continue
+
+            print(f"Successfully generated {len(new_pairs)} train pairs")
+            self.pairs = new_pairs
+            return new_pairs
+
+        except Exception as e:
+            print(f"Error generate train pairs: {e}")
+            return None
+
+    def generate_train_images(self, metadata:dict, img_base_path:str):
+        """
+        '*_integrated.json' metadataから、256x256pxの *_floor_plan.png, *_site_mask.png, *_conv.png を生成する
+
+        Args:
+            metadata: integrated metadata (json)
+            img_base_path: base floor image(png) path 
+            
+        Returns:
+            result_pair: success
+            None: failure
+        """
+
+        try:
+            grid_dimensions = metadata.get('grid_dimensions', None)
+            if grid_dimensions is None or not isinstance(grid_dimensions, dict) or len(grid_dimensions) < 2:
+                grid_dimensions = {'width_grids': 10, 'height_grids': 10}
+
+            width_grids = grid_dimensions['width_grids']
+            height_grids = grid_dimensions['height_grids']
+
+            dir_path = os.path.dirname(img_base_path)
+            img_base = cv2.imread(img_base_path)
+            img_conv = img_base.copy()
+            img_conv = cv2.resize(img_conv, (width_grids*10, height_grids*10))
+
+            structural_elements = metadata.get('structural_elements', None)
+            if structural_elements is None or not isinstance(structural_elements, list):
+                structural_elements = [
+                    {"type": "stair", "grid_x": 1.0, "grid_y": 1.0, "grid_width": 2.0, "grid_height": 1.0, "name": "stair_1"},
+                    {"type": "entrance", "grid_x": 8.0, "grid_y": 8.0, "grid_width": 2.0, "grid_height": 2.0, "name": "entrance_2"},
+                    {"type": "balcony", "grid_x": 0.0, "grid_y": 7.0, "grid_width": 3.0, "grid_height": 3.0, "name": "balcony_3"}
+                ]
+        
+            # 幅高さが小数点1位まであるため、グリッドの10倍で描画
+            img_plan = np.zeros((height_grids*10, width_grids*10, 3), dtype=np.uint8)
+            img_mask = np.ones((height_grids*10, width_grids*10, 3), dtype=np.uint8) * 255
+            for item in structural_elements:
+                element_type = item['type']
+                grid_x1 = round(item['grid_x'] * 10)
+                grid_y1 = round(item['grid_y'] * 10)
+                grid_x2 = round((item['grid_x'] + item['grid_width']) * 10)
+                grid_y2 = round((item['grid_y'] + item['grid_height']) * 10)
+                # 階段は赤、玄関は緑、バルコニーは青、他は黒
+                fill_color_dict = { "stair": (255, 0, 0), "entrance": (0, 255, 0), "balcony": (0, 0, 255) }
+                fill_color = fill_color_dict.get(element_type, (0, 0, 0))
+                cv2.rectangle(img_plan, (grid_x1, grid_y1), (grid_x2, grid_y2), fill_color, thickness=-1)
+                cv2.rectangle(img_conv, (grid_x1, grid_y1), (grid_x2, grid_y2), fill_color, thickness=-1)
+
+            img_plan = cv2.cvtColor(img_plan, cv2.COLOR_RGB2BGR)
+            img_conv = cv2.cvtColor(img_conv, cv2.COLOR_RGB2BGR)
+
+            img_plan = cv2.resize(img_plan, (256, 256))
+            img_mask = cv2.resize(img_mask, (256, 256))
+            img_conv = cv2.resize(img_conv, (256, 256))
+
+            cv2.imwrite(f"{dir_path}/floor_plan.png", img_plan)
+            cv2.imwrite(f"{dir_path}/site_mask.png", img_mask)
+            cv2.imwrite(f"{dir_path}/conv.png", img_conv)
+
+            result_pair = {
+                "dir_path": dir_path,
+                "floor_plan": img_plan,
+                "site_mask": img_mask,
+                "conv": img_conv, 
+                "metadata": metadata
+            }
+            return result_pair
+
+        except Exception as e:
+            print(f"Error generate train images from metadata: {e}")
+
+            return None
 
     def generate_prompt(self, metadata):
         """メタデータからプロンプト生成"""
