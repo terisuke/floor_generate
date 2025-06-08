@@ -1,6 +1,6 @@
 import sys
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 
 # プロジェクトのルートディレクトリを取得し、sys.pathに追加
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
@@ -82,6 +82,30 @@ class LoRATrainer:
         if self.device == "mps":
             torch.mps.empty_cache()
 
+    def get_memory_usage(self):
+        """メモリ使用量を取得"""
+        if self.device == "mps":
+            try:
+                # MPSデバイスのメモリ使用量を取得
+                allocated = torch.mps.current_allocated_memory() / (1024**3)  # GBに変換
+                reserved = torch.mps.driver_allocated_memory() / (1024**3)    # GBに変換
+                return f"MPS: {allocated:.2f}GB allocated, {reserved:.2f}GB reserved"
+            except Exception as e:
+                return f"MPS memory info unavailable: {str(e)}"
+        else:
+            try:
+                # CPUメモリ使用量を取得
+                import psutil
+                process = psutil.Process(os.getpid())
+                memory_info = process.memory_info()
+                return f"CPU: {memory_info.rss / (1024**3):.2f}GB"
+            except Exception as e:
+                return f"CPU memory info unavailable: {str(e)}"
+
+    def clear_memory(self):
+        """メモリをクリア"""
+        if self.device == "mps":
+            torch.mps.empty_cache()
 
     def train(self, train_dataloader: DataLoader, num_epochs=20):
         """LoRA学習実行"""
@@ -91,6 +115,7 @@ class LoRATrainer:
         # Move text_encoder to device
         self.pipeline.text_encoder = self.pipeline.text_encoder.to(self.device)
 
+        datetime_start = datetime.now()
         for epoch in range(num_epochs):
             total_loss = 0
             for batch_idx, batch in enumerate(train_dataloader):
@@ -142,14 +167,21 @@ class LoRATrainer:
 
                 total_loss += loss.item()
 
-                # if batch_idx % 50 == 0:
-                print(f"Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}, Epoch {epoch}, Batch {batch_idx}, Loss: {loss.item():.4f}")
+                # バッチ処理後にメモリをクリア
+                if batch_idx % 10 == 0:  # 10バッチごとにクリア
+                    self.clear_memory()
+    
+                # 進捗率　= 残りエポック数　/ 総エポック数 + 現在のバッチ数 / 総バッチ数
+                progress = (epoch / num_epochs) + ((batch_idx + 1) / len(train_dataloader)) * (1 / num_epochs)
+                # 予想終了時刻を表示する
+                estimated_end_time = datetime_start + timedelta(seconds=((datetime.now() - datetime_start).total_seconds() / progress))
+                print(f"Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}, Epoch {epoch:2d}, Batch {batch_idx:3d}, Loss: {loss.item():.4f}, Memory: {self.get_memory_usage()}, Estimated end time: {estimated_end_time.strftime('%Y-%m-%d %H:%M:%S')}")
 
             print(f"Epoch {epoch} completed. Average Loss: {total_loss/len(train_dataloader):.4f}")
 
             # モデル保存
             # Save only the LoRA weights
-            if epoch % 5 == 0:
+            if epoch % 5 == 0 or epoch == num_epochs - 1:
                  # Create directory if it doesn't exist
                  save_dir = f"models/lora_weights/epoch_{epoch}"
                  os.makedirs(save_dir, exist_ok=True)
