@@ -13,3 +13,4 @@ data/extracted/
 data/raw_pdfs/
 data/training/
 outputs/
+models/lora_weights/
