@@ -290,9 +290,9 @@ class FloorPlanDataset(Dataset):
             img_plan = cv2.cvtColor(img_plan, cv2.COLOR_RGB2BGR)
             img_conv = cv2.cvtColor(img_conv, cv2.COLOR_RGB2BGR)
 
-            img_plan = cv2.resize(img_plan, (256, 256))
-            img_mask = cv2.resize(img_mask, (256, 256))
-            img_conv = cv2.resize(img_conv, (256, 256))
+            img_plan = cv2.resize(img_plan, self.target_size)
+            img_mask = cv2.resize(img_mask, self.target_size)
+            img_conv = cv2.resize(img_conv, self.target_size)
 
             cv2.imwrite(f"{dir_path}/floor_plan.png", img_plan)
             cv2.imwrite(f"{dir_path}/site_mask.png", img_mask)
@@ -302,7 +302,6 @@ class FloorPlanDataset(Dataset):
                 "dir_path": dir_path,
                 "floor_plan": img_plan,
                 "site_mask": img_mask,
-                "conv": img_conv, 
                 "metadata": metadata
             }
             return result_pair

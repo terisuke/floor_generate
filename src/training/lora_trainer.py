@@ -18,6 +18,7 @@ from torch.utils.data import DataLoader
 class LoRATrainer:
     def __init__(self):
         self.device = "mps" if torch.backends.mps.is_available() else "cpu"
+        print(f"Using device: {self.device}")
 
         # Base model - using v1-4 which is open access and smaller
         self.model_id = "CompVis/stable-diffusion-v1-4"
@@ -29,6 +30,21 @@ class LoRATrainer:
             safety_checker=None,
             requires_safety_checker=False
         ).to(self.device)
+
+        # 勾配チェックポイントを有効化
+        self.pipeline.unet.enable_gradient_checkpointing()
+
+        # アテンションブロックの設定を変更
+        for block in self.pipeline.unet.down_blocks + self.pipeline.unet.up_blocks:
+            if hasattr(block, "attentions"):
+                for attn in block.attentions:
+                    # アテンションヘッドを削減
+                    if hasattr(attn, "transformer_blocks"):
+                        for transformer_block in attn.transformer_blocks:
+                            if hasattr(transformer_block, "attn1"):
+                                transformer_block.attn1.heads = 4  # デフォルトは8
+                            if hasattr(transformer_block, "attn2"):
+                                transformer_block.attn2.heads = 4  # デフォルトは8
 
         # Disable safety checker
         self.pipeline.safety_checker = None
