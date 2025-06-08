@@ -17,7 +17,7 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader
 
 class LoRATrainer:
-    def __init__(self):
+    def __init__(self, r=64, lora_alpha=64):
         self.device = "mps" if torch.backends.mps.is_available() else "cpu"
         print(f"Using device: {self.device}")
 
@@ -52,8 +52,8 @@ class LoRATrainer:
 
         # LoRA設定
         self.lora_config = LoraConfig(
-            r=64,                    # Rank (軽量化)
-            lora_alpha=64,
+            r=r,                    # Rank (軽量化)
+            lora_alpha=lora_alpha,
             target_modules=[
                 "to_k", "to_q", "to_v", "to_out.0",
                 "proj_in", "proj_out",

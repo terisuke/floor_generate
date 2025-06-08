@@ -16,7 +16,7 @@ class FloorPlanDataset(Dataset):
     pairs : list[dict]
     organize_training_data : bool
     target_size : tuple[int, int]
-    channels : int
+    channel_count : int
 
     def __init__(self, data_dir, transform=None, organize_training_data=False, target_size=(256, 256)):
         """
@@ -24,12 +24,14 @@ class FloorPlanDataset(Dataset):
             data_dir: データディレクトリのパス
             transform: データ変換用の関数（オプション）
             organize_training_data: 訓練データの整理を行うかどうか
+            target_size: 画像のサイズ
         """
         self.data_dir = data_dir
         self.transform = transform
         self.organize_training_data = organize_training_data
         self.target_size = target_size
-        self.channels = 4
+        self.channel_count = 4
+
         if organize_training_data:
             self.organize_data()
             
@@ -184,20 +186,20 @@ class FloorPlanDataset(Dataset):
 
         # 4チャンネルのテンソルを作成
         # [walls, openings, stairs, rooms] の形式
-        channels = np.zeros((self.channels, *self.target_size), dtype=np.float32)
+        channels = np.zeros((self.channel_count, *self.target_size), dtype=np.float32)
 
         # 現在の3チャンネルデータを4チャンネルにマッピング
-        # チャンネル0: 空のチャンネル（必要に応じて後で実装）
-        channels[0] = np.zeros(self.target_size, dtype=np.float32)
-        
+        # チャンネル0: stairs（階段）の情報
+        channels[0] = floor_plan[:, :, 0]  # stairsチャンネル
+
         # チャンネル1: entrance（玄関）の情報
         channels[1] = floor_plan[:, :, 1]  # entranceチャンネル
         
-        # チャンネル2: stairs（階段）の情報
-        channels[2] = floor_plan[:, :, 0]  # stairsチャンネル
-        
-        # チャンネル3: balcony（バルコニー）の情報
-        channels[3] = floor_plan[:, :, 2]  # balconyチャンネル
+        # チャンネル2: balcony（バルコニー）の情報
+        channels[2] = floor_plan[:, :, 2]  # balconyチャンネル
+
+        # チャンネル3: 空のチャンネル（必要に応じて後で実装）
+        channels[3] = np.zeros(self.target_size, dtype=np.float32)
 
         # PyTorchテンソルに変換
         site_mask_tensor = torch.from_numpy(site_mask).unsqueeze(0)  # [1, H, W]
@@ -274,7 +276,6 @@ class FloorPlanDataset(Dataset):
         
             # 幅高さが小数点1位まであるため、グリッドの10倍で描画
             img_plan = np.zeros((height_grids*10, width_grids*10, 3), dtype=np.uint8)
-            img_mask = np.ones((height_grids*10, width_grids*10, 3), dtype=np.uint8) * 255
             for item in structural_elements:
                 element_type = item['type']
                 grid_x1 = round(item['grid_x'] * 10)
@@ -284,11 +285,17 @@ class FloorPlanDataset(Dataset):
                 # 階段は赤、玄関は緑、バルコニーは青、他は黒
                 fill_color_dict = { "stair": (255, 0, 0), "entrance": (0, 255, 0), "balcony": (0, 0, 255) }
                 fill_color = fill_color_dict.get(element_type, (0, 0, 0))
-                cv2.rectangle(img_plan, (grid_x1, grid_y1), (grid_x2, grid_y2), fill_color, thickness=-1)
-                cv2.rectangle(img_conv, (grid_x1, grid_y1), (grid_x2, grid_y2), fill_color, thickness=-1)
+                cv2.rectangle(img_plan, (grid_x1, grid_y1), (grid_x2, grid_y2), fill_color, thickness=1)
+                cv2.rectangle(img_conv, (grid_x1, grid_y1), (grid_x2, grid_y2), fill_color, thickness=1)
 
             img_plan = cv2.cvtColor(img_plan, cv2.COLOR_RGB2BGR)
             img_conv = cv2.cvtColor(img_conv, cv2.COLOR_RGB2BGR)
+
+            # マスクに外枠をつける
+            margin = 0.1
+            img_mask = np.zeros((height_grids*10, width_grids*10, 3), dtype=np.uint8)
+            img_mask = cv2.rectangle(img_mask, (int(width_grids*10*margin), int(height_grids*10*margin)), (int(width_grids*10*(1-margin)), int(height_grids*10*(1-margin))), (255, 255, 255), thickness=-1)
+            img_mask = cv2.cvtColor(img_mask, cv2.COLOR_BGR2GRAY)
 
             img_plan = cv2.resize(img_plan, self.target_size)
             img_mask = cv2.resize(img_mask, self.target_size)
