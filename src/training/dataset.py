@@ -258,13 +258,24 @@ class FloorPlanDataset(Dataset):
             if grid_dimensions is None or not isinstance(grid_dimensions, dict) or len(grid_dimensions) < 2:
                 grid_dimensions = {'width_grids': 10, 'height_grids': 10}
 
-            width_grids = grid_dimensions['width_grids']
-            height_grids = grid_dimensions['height_grids']
+            scale_info = metadata.get('scale_info', None)
+            if scale_info is None or not isinstance(scale_info, dict) or len(scale_info) < 2:
+                scale_info = {
+                    'drawing_scale': '1:100',
+                    'grid_mm': 910,
+                    'grid_px': 107.5
+                }
 
             dir_path = os.path.dirname(img_base_path)
             img_base = cv2.imread(img_base_path)
+            height_image, width_image = img_base.shape[:2]
+
+            width_grids = grid_dimensions['width_grids']
+            height_grids = grid_dimensions['height_grids']
+            width_per_grid = width_image / width_grids
+            height_per_grid = height_image / height_grids
+
             img_conv = img_base.copy()
-            img_conv = cv2.resize(img_conv, (width_grids*10, height_grids*10))
 
             structural_elements = metadata.get('structural_elements', None)
             if structural_elements is None or not isinstance(structural_elements, list):
@@ -274,27 +285,26 @@ class FloorPlanDataset(Dataset):
                     {"type": "balcony", "grid_x": 0.0, "grid_y": 7.0, "grid_width": 3.0, "grid_height": 3.0, "name": "balcony_3"}
                 ]
         
-            # 幅高さが小数点1位まであるため、グリッドの10倍で描画
-            img_plan = np.zeros((height_grids*10, width_grids*10, 3), dtype=np.uint8)
+            img_plan = np.zeros((height_image, width_image, 3), dtype=np.uint8)
             for item in structural_elements:
                 element_type = item['type']
-                grid_x1 = round(item['grid_x'] * 10)
-                grid_y1 = round(item['grid_y'] * 10)
-                grid_x2 = round((item['grid_x'] + item['grid_width']) * 10)
-                grid_y2 = round((item['grid_y'] + item['grid_height']) * 10)
+                grid_x1 = round(item['grid_x'] * width_per_grid)
+                grid_y1 = round(item['grid_y'] * height_per_grid)
+                grid_x2 = round((item['grid_x'] + item['grid_width']) * width_per_grid)
+                grid_y2 = round((item['grid_y'] + item['grid_height']) * height_per_grid)
                 # 階段は赤、玄関は緑、バルコニーは青、他は黒
                 fill_color_dict = { "stair": (255, 0, 0), "entrance": (0, 255, 0), "balcony": (0, 0, 255) }
                 fill_color = fill_color_dict.get(element_type, (0, 0, 0))
-                cv2.rectangle(img_plan, (grid_x1, grid_y1), (grid_x2, grid_y2), fill_color, thickness=1)
-                cv2.rectangle(img_conv, (grid_x1, grid_y1), (grid_x2, grid_y2), fill_color, thickness=1)
+                cv2.rectangle(img_plan, (grid_x1, grid_y1), (grid_x2, grid_y2), fill_color, thickness=-1)
+                cv2.rectangle(img_conv, (grid_x1, grid_y1), (grid_x2, grid_y2), fill_color, thickness=5)
 
             img_plan = cv2.cvtColor(img_plan, cv2.COLOR_RGB2BGR)
             img_conv = cv2.cvtColor(img_conv, cv2.COLOR_RGB2BGR)
 
             # マスクに外枠をつける
-            margin = 0.1
-            img_mask = np.zeros((height_grids*10, width_grids*10, 3), dtype=np.uint8)
-            img_mask = cv2.rectangle(img_mask, (int(width_grids*10*margin), int(height_grids*10*margin)), (int(width_grids*10*(1-margin)), int(height_grids*10*(1-margin))), (255, 255, 255), thickness=-1)
+            margin = 0.05
+            img_mask = np.zeros((height_image, width_image, 3), dtype=np.uint8)
+            img_mask = cv2.rectangle(img_mask, (int(width_image*margin), int(height_image*margin)), (int(width_image*(1-margin)), int(height_image*(1-margin))), (255, 255, 255), thickness=-1)
             img_mask = cv2.cvtColor(img_mask, cv2.COLOR_BGR2GRAY)
 
             img_plan = cv2.resize(img_plan, self.target_size)
