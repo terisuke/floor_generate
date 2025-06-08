@@ -1,5 +1,6 @@
 import sys
 import os
+from datetime import datetime
 
 # プロジェクトのルートディレクトリを取得し、sys.pathに追加
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
@@ -77,6 +78,10 @@ class LoRATrainer:
         # Scheduler (optional but good practice)
         self.scheduler = DDPMScheduler.from_config(self.pipeline.scheduler.config)
 
+        # メモリ使用量を監視
+        if self.device == "mps":
+            torch.mps.empty_cache()
+
 
     def train(self, train_dataloader: DataLoader, num_epochs=20):
         """LoRA学習実行"""
@@ -137,8 +142,8 @@ class LoRATrainer:
 
                 total_loss += loss.item()
 
-                if batch_idx % 50 == 0:
-                    print(f"Epoch {epoch}, Batch {batch_idx}, Loss: {loss.item():.4f}")
+                # if batch_idx % 50 == 0:
+                print(f"Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}, Epoch {epoch}, Batch {batch_idx}, Loss: {loss.item():.4f}")
 
             print(f"Epoch {epoch} completed. Average Loss: {total_loss/len(train_dataloader):.4f}")
 
