@@ -99,52 +99,109 @@ class FloorPlanDataset(Dataset):
 
     def generate_prompt(self, metadata):
         """メタデータからプロンプト生成"""
-        # Example prompt generation based on metadata with robust error handling
         try:
-            grid_size = metadata.get('site_grid_size', None)
-            if grid_size is None or not isinstance(grid_size, (list, tuple)) or len(grid_size) < 2:
-                grid_size = ('10', '10')  # Default values if missing or invalid
+            if 'grid_dimensions' in metadata and 'structural_elements' in metadata:
+                return self.generate_integrated_prompt(metadata)
+            else:
+                return self.generate_legacy_prompt(metadata)
                 
-            area = metadata.get('total_area_sqm', 0)
-            if area is None:
-                area = 100  # Default area
-                
-            rooms = metadata.get('room_count', 'N/A')
-            if rooms is None:
-                rooms = '4'  # Default room count
-                
-            source_pdf = metadata.get('source_pdf', 'unknown')
-            if source_pdf is None:
-                source_pdf = 'unknown'
-                
-            prompt = f"site_size_{grid_size[0]}x{grid_size[1]}, "
-            prompt += f"total_area_{int(area) if isinstance(area, (int, float)) else area}sqm, "
-            prompt += f"rooms_{rooms}, "
-            
-            # Clean up source name for prompt
-            try:
-                source_name = os.path.splitext(source_pdf)[0].replace('.','_')
-            except (AttributeError, IndexError):
-                source_name = 'unknown'
-                
-            prompt += f"source_{source_name}, "
-            prompt += "japanese_house, 910mm_grid, architectural_plan"
-            
-            # Add more details from metadata if available and relevant for conditioning
-            style = metadata.get('style', None)
-            if style:
-                prompt += f", style_{style}"
-                
-            floor_count = metadata.get('floor_count', None)
-            if floor_count:
-                prompt += f", floors_{floor_count}"
-                
-            return prompt
-            
         except Exception as e:
             print(f"Error generating prompt from metadata: {e}")
             print(f"Using default prompt instead. Metadata: {metadata}")
             return "japanese_house, 910mm_grid, architectural_plan, modern_style"
+    
+    def generate_integrated_prompt(self, metadata):
+        """統合JSONフォーマット用の高精度プロンプト生成"""
+        grid_dims = metadata.get('grid_dimensions', {})
+        width = grid_dims.get('width_grids', 6)
+        height = grid_dims.get('height_grids', 10)
+        
+        elements = []
+        for elem in metadata.get('structural_elements', []):
+            elem_type = elem['type']
+            x = elem['grid_x']
+            y = elem['grid_y']
+            elements.append(f"{elem_type}_{x}_{y}")
+        
+        building_ctx = metadata.get('building_context', {})
+        building_type = building_ctx.get('type', 'single_family_house')
+        floors_total = building_ctx.get('floors_total', 2)
+        current_floor = building_ctx.get('current_floor', '1F')
+        
+        zones_info = []
+        for zone in metadata.get('zones', []):
+            zone_detail = f"{zone['type']}{zone['approximate_grids']}grids"
+            zones_info.append(zone_detail)
+        
+        training_hints = metadata.get('training_hints', {})
+        total_grids = training_hints.get('total_area_grids', width * height)
+        room_count = training_hints.get('room_count', 3)
+        
+        scale_info = metadata.get('scale_info', {})
+        drawing_scale = scale_info.get('drawing_scale', '1:100').replace(':', 'to')
+        
+        elements_str = "_".join(elements) if elements else "no_structural"
+        zones_str = "_".join(zones_info) if zones_info else "mixed_zones"
+        
+        prompt = f"building_{building_type}_{floors_total}floors, "
+        prompt += f"current_floor_{current_floor}, "
+        prompt += f"grid_{width}x{height}, "
+        prompt += f"structural_elements_{elements_str}, "
+        prompt += f"zones_{zones_str}, "
+        prompt += f"total_area_{total_grids}grids, "
+        prompt += f"room_count_{room_count}, "
+        prompt += f"scale_{drawing_scale}, "
+        prompt += "japanese_residential_910mm_grid, architectural_plan"
+        
+        floor_constraints = training_hints.get('floor_constraints', {})
+        if floor_constraints:
+            required = floor_constraints.get('required_elements', [])
+            if required:
+                prompt += f", required_{'+'.join(required)}"
+        
+        return prompt
+    
+    def generate_legacy_prompt(self, metadata):
+        """従来のメタデータフォーマット用プロンプト生成"""
+        grid_size = metadata.get('site_grid_size', None)
+        if grid_size is None or not isinstance(grid_size, (list, tuple)) or len(grid_size) < 2:
+            grid_size = ('10', '10')  # Default values if missing or invalid
+            
+        area = metadata.get('total_area_sqm', 0)
+        if area is None:
+            area = 100  # Default area
+            
+        rooms = metadata.get('room_count', 'N/A')
+        if rooms is None:
+            rooms = '4'  # Default room count
+            
+        source_pdf = metadata.get('source_pdf', 'unknown')
+        if source_pdf is None:
+            source_pdf = 'unknown'
+            
+        prompt = f"site_size_{grid_size[0]}x{grid_size[1]}, "
+        prompt += f"total_area_{int(area) if isinstance(area, (int, float)) else area}sqm, "
+        prompt += f"rooms_{rooms}, "
+        
+        # Clean up source name for prompt
+        try:
+            source_name = os.path.splitext(source_pdf)[0].replace('.','_')
+        except (AttributeError, IndexError):
+            source_name = 'unknown'
+            
+        prompt += f"source_{source_name}, "
+        prompt += "japanese_house, 910mm_grid, architectural_plan"
+        
+        # Add more details from metadata if available and relevant for conditioning
+        style = metadata.get('style', None)
+        if style:
+            prompt += f", style_{style}"
+            
+        floor_count = metadata.get('floor_count', None)
+        if floor_count:
+            prompt += f", floors_{floor_count}"
+            
+        return prompt
 
 # Example of a simple transform (optional)
 # from torchvision import transforms
@@ -156,4 +213,4 @@ class FloorPlanDataset(Dataset):
 #          # Apply normalization if needed
 #          # normalize = transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]) # Example for 3 channel image
 #          # image_tensor = normalize(image_tensor)
-#          return image_tensor, mask_tensor   
+#          return image_tensor, mask_tensor      
