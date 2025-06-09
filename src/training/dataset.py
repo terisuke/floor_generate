@@ -332,6 +332,7 @@ class FloorPlanDataset(Dataset):
         """メタデータからプロンプト生成"""
         # Example prompt generation based on metadata with robust error handling
         try:
+            # パラメータ取得
             annotation_metadata = metadata.get('annotation_metadata', None)
             if annotation_metadata is None or not isinstance(annotation_metadata, dict) or len(annotation_metadata) < 2:
                 annotation_metadata = {
@@ -348,7 +349,6 @@ class FloorPlanDataset(Dataset):
                     'drawing_scale': '1:100'
                 }
 
-
             training_hints = metadata.get('training_hints', None)
             if training_hints is None or not isinstance(training_hints, dict) or len(training_hints) < 2:
                 training_hints = {
@@ -363,7 +363,6 @@ class FloorPlanDataset(Dataset):
             if original_pdf is None:
                 original_pdf = 'unknown'
 
-            # グリッドサイズ
             grid_dimensions = metadata.get('grid_dimensions', None)
             if grid_dimensions is None or not isinstance(grid_dimensions, dict) or len(grid_dimensions) < 2:
                 grid_dimensions = {
@@ -371,7 +370,6 @@ class FloorPlanDataset(Dataset):
                     'height_grids': 10
                 }
             
-            # 縮尺
             scale_info = metadata.get('scale_info', None)
             if scale_info is None or not isinstance(scale_info, dict) or len(scale_info) < 2:
                 scale_info = {
@@ -380,12 +378,10 @@ class FloorPlanDataset(Dataset):
                     'grid_px': 107.5
                 }
 
-            # 階数
             floor = metadata.get('floor', None)
             if floor is None:
                 floor = '1F'
 
-            # 建物のコンテキスト
             building_context = metadata.get('building_context', None)
             if building_context is None or not isinstance(building_context, dict) or len(building_context) < 2:
                 building_context = {
@@ -403,8 +399,6 @@ class FloorPlanDataset(Dataset):
                     }
                 }
 
-
-            # 居室
             zones = metadata.get('zones', None)
             if zones is None or not isinstance(zones, list) or len(zones) < 2:
                 zones = [
@@ -415,11 +409,10 @@ class FloorPlanDataset(Dataset):
 
             # プロンプト生成
             prompt_parts = []
-            prompt_parts.append(f"grid_{annotation_metadata['grid_resolution']}")
-            prompt_parts.append(f"area_{training_hints['total_area_grids']}grids")
-            prompt_parts.append(f"scale_{scale_info['drawing_scale']}")
-            prompt_parts.append(f"floor_{floor}")
-            prompt_parts.append(f"rooms_{training_hints['room_count']}")
+            prompt_parts.append(f"grid_{grid_dimensions['width_grids']}x{grid_dimensions['height_grids']}")
+            prompt_parts.append(f"building_{building_context['type']}_{building_context['floors_total']}floors")
+            prompt_parts.append(f"current_floor_{floor}")
+            prompt_parts.append("style_modern")
 
             if "entrance" in training_hints['floor_constraints']['prohibited_elements']:
                 prompt_parts.append("entrance_prohibited")

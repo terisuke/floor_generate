@@ -77,6 +77,9 @@ def main():
     parser.add_argument("--model_path", type=str, default="models/lora_weights/epoch_15", 
                         help="Path to the trained LoRA model weights directory.")
     parser.add_argument("--no_3d", action="store_true", help="Skip FreeCAD 3D model generation.")
+    parser.add_argument("--type", type=str, default="single_family_house", help="Type of building (e.g., single_family_house, apartment).")
+    parser.add_argument("--total_floors", type=int, default=2, help="Total number of floors in the building.")
+    parser.add_argument("--current_floor", type=int, default=1, help="Current floor number in the building.")
 
     args = parser.parse_args()
 
@@ -103,7 +106,15 @@ def main():
         print(f"Site mask saved to {generated_img_dir}/site_mask_cli.png")
 
         # 2. Generate plan using AI (placeholder)
-        prompt = f"site_size_{args.width}x{args.height}, rooms_{args.rooms}, style_{args.style}, japanese_house, 910mm_grid, architectural_plan"
+        prompt_parts = []
+        prompt_parts.append(f"grid_{args.width}x{args.height}")
+        prompt_parts.append(f"building_{args.type}_{args.total_floors}floors")
+        prompt_parts.append(f"current_floor_{args.current_floor}F")
+        prompt_parts.append(f"style_{args.style}")
+        prompt_parts.append(f"japanese_house")
+        prompt_parts.append(f"910mm_grid")
+        prompt_parts.append(f"architectural_plan")
+        prompt = ", ".join(prompt_parts)
         # raw_plan is HWC RGBA from placeholder
         raw_plan_rgba = plan_generator.generate_plan(site_mask, prompt)
         cv2.imwrite(os.path.join(generated_img_dir, "plan_raw_cli.png"), cv2.cvtColor(raw_plan_rgba, cv2.COLOR_RGBA2BGRA))
