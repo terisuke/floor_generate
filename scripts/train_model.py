@@ -55,6 +55,8 @@ def main():
                         help="Directory containing the training data pairs.")
     parser.add_argument("--image_size", type=int, default=512,
                         help="Target size of the training data.")
+    parser.add_argument("--organize_raw", action="store_true",
+                        help="Organize training data from RAW directory.")
     parser.add_argument("--epochs", type=int, default=20,
                         help="Number of training epochs.")
     parser.add_argument("--batch_size", type=int, default=1,  # Reduced to 1 for testing
@@ -76,7 +78,7 @@ def main():
         print(f"Created model output directory: {args.output_model_dir}")
 
     print("Initializing dataset and dataloader...")
-    train_dataset = FloorPlanDataset(data_dir=args.data_dir, transform=None, organize_training_data=True, target_size=(args.image_size, args.image_size))
+    train_dataset = FloorPlanDataset(data_dir=args.data_dir, transform=None, organize_raw=args.organize_raw, target_size=args.image_size)
     
     if len(train_dataset) == 0:
         print(f"No training data found in {args.data_dir}. Exiting.")

@@ -13,32 +13,81 @@ class FloorPlanDataset(Dataset):
 
     data_dir : str
     transform : callable
-    pairs : list[dict]
-    organize_training_data : bool
-    target_size : tuple[int, int]
+    train_data : list[dict]
+    organize_raw : bool
+    target_sizes : tuple[int, int]
     channel_count : int
 
-    def __init__(self, data_dir, transform=None, organize_training_data=False, target_size=(256, 256)):
+    def __init__(self, data_dir="data", transform=None, organize_raw=False, target_size:int=512):
         """
         Args:
             data_dir: データディレクトリのパス
             transform: データ変換用の関数（オプション）
-            organize_training_data: 訓練データの整理を行うかどうか
+            organize_raw: 訓練データの整理を行うかどうか
             target_size: 画像のサイズ
         """
         self.data_dir = data_dir
+        self.organize_raw = organize_raw
         self.transform = transform
-        self.organize_training_data = organize_training_data
-        self.target_size = target_size
+        self.target_sizes = (target_size, target_size)
         self.channel_count = 4
 
-        if organize_training_data:
-            self.organize_data()
-            
-        self.pairs = self.load_data_pairs()
-        self.pairs = self.generate_train_pairs()
+        self.train_data = self.load_train_data()
 
-    def extract_floor_info(self, filename):
+    def __len__(self):
+        return len(self.pairs)
+
+    def __getitem__(self, idx):
+        if idx >= len(self.pairs):
+            raise IndexError("Dataset index out of range")
+            
+        train_datum = self.train_data[idx]
+        dir_path = train_datum['dir_path']
+        metadata = train_datum['metadata']
+        # 画像読み込み
+        img_mask = train_datum['img_mask']
+        img_plan = train_datum['img_plan']
+
+        if img_mask is None or img_plan is None:
+            print(f"Error loading images for pair {dir_path}. Returning None.")
+            return None
+
+        # 正規化 (0-1)
+        img_mask = img_mask.astype(np.float32) / 255.0
+        img_plan = img_plan.astype(np.float32) / 255.0
+
+        # 4チャンネルのテンソルを作成
+        # [walls, openings, stairs, rooms] の形式
+        channels = np.zeros((self.channel_count, *self.target_sizes), dtype=np.float32)
+
+        # 現在の3チャンネルデータを4チャンネルにマッピング
+        # チャンネル0: stairs（階段）の情報
+        channels[0] = img_plan[:, :, 0]  # stairsチャンネル
+
+        # チャンネル1: entrance（玄関）の情報
+        channels[1] = img_plan[:, :, 1]  # entranceチャンネル
+        
+        # チャンネル2: balcony（バルコニー）の情報
+        channels[2] = img_plan[:, :, 2]  # balconyチャンネル
+
+        # チャンネル3: 空のチャンネル（必要に応じて後で実装）
+        channels[3] = np.zeros(self.target_sizes, dtype=np.float32)
+
+        # PyTorchテンソルに変換
+        mask_tensor = torch.from_numpy(img_mask).unsqueeze(0)  # [1, H, W]
+        plan_tensor = torch.from_numpy(channels)  # [4, H, W]
+
+        # プロンプト生成
+        prompt = self.generate_prompt(metadata)
+
+        return {
+            'condition': mask_tensor,
+            'target': plan_tensor,
+            'prompt': prompt,
+            'metadata': metadata
+        }        
+
+    def extract_floor_num(self, filename):
         """
         ファイル名から数値と階数を抽出する
         
@@ -68,181 +117,104 @@ class FloorPlanDataset(Dataset):
         number = number_match.group(1).zfill(5)
         
         return f"{number}_{floor}"
-
-    def organize_data(self):
-        """訓練データを整理する"""
-        print("Organizing training data...")
-        
+    
+    def load_train_data(self, organize_raw=False):
         # 訓練データ用のディレクトリを作成
         training_dir = os.path.join(self.data_dir, "training")
-        os.makedirs(training_dir, exist_ok=True)
-        
-        # rawディレクトリ内のPNGファイルを検索
-        raw_dir = os.path.join(self.data_dir, "raw")
-        if not os.path.exists(raw_dir):
-            print(f"Raw directory not found: {raw_dir}")
-            return
-            
-        png_files = glob(os.path.join(raw_dir, "*.png"))
-        print(f"Found {len(png_files)} PNG files in {raw_dir}")
-        
-        organized_count = 0
-        for png_path in png_files:
-            try:
-                # ファイル名から情報を抽出
-                file_stem = Path(png_path).stem
-                floor_info = self.extract_floor_info(file_stem)
-                
-                if not floor_info:
-                    print(f"Could not extract floor info from {file_stem}")
-                    continue
-                
-                # 対応するJSONファイルのパス
-                integrated_json_path = png_path.replace('.png', '_integrated.json')
-                elements_json_path = png_path.replace('.png', '_elements.json')
-                
-                if not os.path.exists(integrated_json_path):
-                    print(f"Integrated JSON not found for {file_stem}")
-                    continue
-                
-                # 訓練データ用のディレクトリを作成
-                target_dir = os.path.join(training_dir, floor_info)
-                os.makedirs(target_dir, exist_ok=True)
-                
-                # ファイルをコピー
-                shutil.copy2(png_path, os.path.join(target_dir, "img_base.png"))
-                shutil.copy2(integrated_json_path, os.path.join(target_dir, "meta_integrated.json"))
-                
-                if os.path.exists(elements_json_path):
-                    shutil.copy2(elements_json_path, os.path.join(target_dir, "meta_elements.json"))
-                
-                organized_count += 1
-                print(f"Organized {file_stem} -> {floor_info}")
-                
-            except Exception as e:
-                print(f"Error organizing {png_path}: {e}")
-                continue
-        
-        print(f"Successfully organized {organized_count} data pairs")
+        if not os.path.exists(training_dir):
+            os.makedirs(training_dir, exist_ok=True)
 
-    def load_data_pairs(self):
-        """学習データペアを読み込み"""
-        pairs = []
+        # rawディレクトリからtrainingディレクトリに整理する
+        if organize_raw:
+            print("Organizing raw to training ...")
+            # rawディレクトリ内のPNGファイルを検索
+            raw_dir = os.path.join(self.data_dir, "raw")
+            if not os.path.exists(raw_dir):
+                print(f"Raw directory not found: {raw_dir}")
+                return
         
-        # trainingディレクトリから読み込む
-        training_dir = os.path.join(self.data_dir, "training")
-        if os.path.exists(training_dir):
-            # 訓練データディレクトリ内の各フォルダを処理
-            for floor_dir in os.listdir(training_dir):
-                floor_path = os.path.join(training_dir, floor_dir)
-                if not os.path.isdir(floor_path):
-                    continue
-                    
-                img_base_path = os.path.join(floor_path, "img_base.png")
-                meta_integrated_path = os.path.join(floor_path, "meta_integrated.json")
-                
-                if not (os.path.exists(img_base_path) and os.path.exists(meta_integrated_path)):
-                    print(f"Warning: Incomplete data in {floor_dir}")
-                    continue
-                
+            png_files = glob(os.path.join(raw_dir, "*.png"))
+            print(f"Found {len(png_files)} PNG files in {raw_dir}")
+            
+            organized_count = 0
+            for png_path in png_files:
                 try:
-                    with open(meta_integrated_path, 'r') as f:
-                        metadata = json.load(f)
-                        
-                    pairs.append({
-                        'dir_path': floor_path,
-                        'metadata': metadata,
-                        'base_png': img_base_path
-                    })
+                    file_stem = Path(png_path).stem
+                    floor_num = self.extract_floor_num(file_stem)
+                    
+                    if not floor_num:
+                        print(f"Could not extract floor num from {file_stem}")
+                        continue
+                    
+                    # 対応するJSONファイルのパス
+                    integrated_json_path = png_path.replace('.png', '_integrated.json')
+                    elements_json_path = png_path.replace('.png', '_elements.json')
+                    
+                    if not os.path.exists(integrated_json_path):
+                        print(f"Integrated JSON not found for {file_stem}")
+                        continue
+                    
+                    # 訓練データ用のディレクトリを作成
+                    target_dir = os.path.join(training_dir, floor_num)
+                    os.makedirs(target_dir, exist_ok=True)
+                    
+                    # ファイルをコピー
+                    shutil.copy2(png_path, os.path.join(target_dir, "img_base.png"))
+                    shutil.copy2(integrated_json_path, os.path.join(target_dir, "meta_integrated.json"))
+                    
+                    if os.path.exists(elements_json_path):
+                        shutil.copy2(elements_json_path, os.path.join(target_dir, "meta_elements.json"))
+                    
+                    organized_count += 1
+                    print(f"Organized {file_stem} -> {floor_num}")
+                    
                 except Exception as e:
-                    print(f"Error loading metadata from {meta_integrated_path}: {e}")
+                    print(f"Error organizing {png_path}: {e}")
                     continue
-
-        print(f"Loaded {len(pairs)} valid data pairs.")
-        return pairs
-
-    def __len__(self):
-        return len(self.pairs)
-
-    def __getitem__(self, idx):
-        if idx >= len(self.pairs):
-            raise IndexError("Dataset index out of range")
             
-        pair = self.pairs[idx]
-        dir_path = pair['dir_path']
-        metadata = pair['metadata']
+            print(f"Successfully organized {organized_count} data pairs")
 
-        # 画像読み込み
-        site_mask = cv2.imread(f"{dir_path}/site_mask.png", cv2.IMREAD_GRAYSCALE)
-        floor_plan = cv2.imread(f"{dir_path}/floor_plan.png", cv2.IMREAD_UNCHANGED)
+        # meta_integrated.json と img_base.png を読み込み、学習用データを生成する
+        train_data = []
+        for floor_dir in os.listdir(training_dir):
+            floor_path = os.path.join(training_dir, floor_dir)
+            if not os.path.isdir(floor_path):
+                continue
+                
+            img_base_path = os.path.join(floor_path, "img_base.png")
+            meta_integrated_path = os.path.join(floor_path, "meta_integrated.json")
+            meta_elements_path = os.path.join(floor_path, "meta_elements.json")
+            
+            if not (os.path.exists(img_base_path) and os.path.exists(meta_integrated_path)):
+                print(f"Warning: Incomplete data in {floor_dir}")
+                continue
+            
+            try:
+                with open(meta_integrated_path, 'r') as f:
+                    metadata = json.load(f)
+                    
+                # 学習用画像合成
+                img_plan, img_mask = self.render_pair_images(metadata, img_base_path)
+                prompt = self.create_prompt(metadata)
 
-        if site_mask is None or floor_plan is None:
-            print(f"Error loading images for pair {dir_path}. Returning None.")
-            return None
+                train_data.append({
+                    'dir_path': floor_path,
+                    'img_plan': img_plan,
+                    'img_mask': img_mask,
+                    'metadata': metadata,
+                    'prompt': prompt
+                })
 
-        # 正規化 (0-1)
-        site_mask = site_mask.astype(np.float32) / 255.0
-        floor_plan = floor_plan.astype(np.float32) / 255.0
+            except Exception as e:
+                print(f"Error loading metadata from {meta_integrated_path}: {e}")
+                continue
 
-        # 4チャンネルのテンソルを作成
-        # [walls, openings, stairs, rooms] の形式
-        channels = np.zeros((self.channel_count, *self.target_size), dtype=np.float32)
+        print(f"Loaded {len(train_data)} valid data pairs.")
+        return train_data
 
-        # 現在の3チャンネルデータを4チャンネルにマッピング
-        # チャンネル0: stairs（階段）の情報
-        channels[0] = floor_plan[:, :, 0]  # stairsチャンネル
-
-        # チャンネル1: entrance（玄関）の情報
-        channels[1] = floor_plan[:, :, 1]  # entranceチャンネル
-        
-        # チャンネル2: balcony（バルコニー）の情報
-        channels[2] = floor_plan[:, :, 2]  # balconyチャンネル
-
-        # チャンネル3: 空のチャンネル（必要に応じて後で実装）
-        channels[3] = np.zeros(self.target_size, dtype=np.float32)
-
-        # PyTorchテンソルに変換
-        site_mask_tensor = torch.from_numpy(site_mask).unsqueeze(0)  # [1, H, W]
-        floor_plan_tensor = torch.from_numpy(channels)  # [4, H, W]
-
-        # プロンプト生成
-        prompt = self.generate_prompt(metadata)
-
-        return {
-            'condition': site_mask_tensor,
-            'target': floor_plan_tensor,
-            'prompt': prompt,
-            'metadata': metadata
-        }
-
-    def generate_train_pairs(self):
+    def render_pair_images(self, metadata:dict, img_base_path:str):
         """
-        メタデータをもとに学習用画像データを生成する
-        """
-
-        new_pairs = []
-        try:
-            for pair in self.pairs:
-                result_pair = self.generate_train_images(pair['metadata'], pair['base_png'])
-                prompt = self.generate_prompt(pair['metadata'])
-                result_pair['prompt'] = prompt
-                if result_pair is not None:
-                    new_pairs.append(result_pair)
-                else:
-                    print(f"Error generate train images from metadata: {pair['metadata']}")
-                    continue
-
-            print(f"Successfully generated {len(new_pairs)} train pairs")
-            self.pairs = new_pairs
-            return new_pairs
-
-        except Exception as e:
-            print(f"Error generate train pairs: {e}")
-            return None
-
-    def generate_train_images(self, metadata:dict, img_base_path:str):
-        """
-        '*_integrated.json' metadataから、256x256pxの *_floor_plan.png, *_site_mask.png, *_conv.png を生成する
+        '*_integrated.json' metadataから、*_floor_plan.png, *_site_mask.png を生成する
 
         Args:
             metadata: integrated metadata (json)
@@ -305,26 +277,20 @@ class FloorPlanDataset(Dataset):
             img_mask = cv2.rectangle(img_mask, (int(width_image*margin), int(height_image*margin)), (int(width_image*(1-margin)), int(height_image*(1-margin))), (255, 255, 255), thickness=-1)
             img_mask = cv2.cvtColor(img_mask, cv2.COLOR_BGR2GRAY)
 
-            img_plan = cv2.resize(img_plan, self.target_size)
-            img_mask = cv2.resize(img_mask, self.target_size)
+            img_plan = cv2.resize(img_plan, self.target_sizes)
+            img_mask = cv2.resize(img_mask, self.target_sizes)
 
             cv2.imwrite(f"{dir_path}/floor_plan.png", img_plan)
             cv2.imwrite(f"{dir_path}/site_mask.png", img_mask)
 
-            result_pair = {
-                "dir_path": dir_path,
-                "floor_plan": img_plan,
-                "site_mask": img_mask,
-                "metadata": metadata
-            }
-            return result_pair
+            return img_plan, img_mask
 
         except Exception as e:
             print(f"Error generate train images from metadata: {e}")
 
             return None
 
-    def generate_prompt(self, metadata):
+    def create_prompt(self, metadata):
         """メタデータからプロンプト生成"""
         # Example prompt generation based on metadata with robust error handling
         try:
