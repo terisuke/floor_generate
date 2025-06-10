@@ -14,18 +14,16 @@ MacBook Pro (M4 Max) とUbuntu 22.04上で動作する、建築図面PDFを学�
 
 ```mermaid
 graph TD
-    A[PDF図面集<br>MVP少量で実証] --> B[寸法・特徴抽出<br>src/preprocessing/<br>dimension_extractor.py<br>(PaddleOCR)]
-    B --> C[グリッド正規化<br>src/preprocessing/<br>grid_normalizer.py]
-    C --> D[学習データペア生成<br>src/preprocessing/<br>training_data_generator.py<br>(半自動:壁情報中心)]
+    A[PNG・JSONメタデータ集<br>MVP少量で実証] --> D[学習データペア生成<br>src/preprocessing/<br>training_data_generator.py<br>半自動:壁情報中心]
     D --> E[学習データセット]
-    E --> F[AIモデル学習<br>src/training/<br>lora_trainer.py]
+    E --> F[AIモデル学習<br>src/training/<br>lora_trainer.py] --> I
     
-    G[Streamlit UI<br>(敷地・LDK等入力)] --> H[敷地マスク生成]
-    H --> I[AI推論<br>(平面図生成)]
-    I --> J[基本制約チェック<br>(ルールベース)]
-    J --> K[ベクタ変換<br>(SVG出力)]
-    K --> L[FreeCAD連携<br>(壁の3D押出)]
-    L --> N[3Dモデル<br>(.FCStd出力)]
+    G[Streamlit UI<br>敷地・LDK等入力] --> H[敷地マスク生成]
+    H --> I[AI推論<br>平面図生成]
+    I --> J[基本制約チェック<br>ルールベース]
+    J --> K[ベクタ変換<br>SVG出力]
+    K --> L[FreeCAD連携<br>壁の3D押出]
+    L --> N[3Dモデル<br>.FCStd出力]
 ```
 
 ## 🚀 セットアップ
