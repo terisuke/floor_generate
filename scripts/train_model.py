@@ -53,7 +53,7 @@ def main():
     parser = argparse.ArgumentParser(description="Train LoRA model for floor plan generation.")
     parser.add_argument("--data_dir", type=str, default="data",
                         help="Directory containing the training data pairs.")
-    parser.add_argument("--image_size", type=int, default=256,
+    parser.add_argument("--image_size", type=int, default=512,
                         help="Target size of the training data.")
     parser.add_argument("--epochs", type=int, default=20,
                         help="Number of training epochs.")
