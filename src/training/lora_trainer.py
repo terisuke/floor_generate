@@ -116,7 +116,7 @@ class LoRATrainer:
         self.pipeline.text_encoder = self.pipeline.text_encoder.to(self.device)
 
         datetime_start = datetime.now()
-        for epoch in range(num_epochs):
+        for epoch in range(1, num_epochs+1):
             total_loss = 0
             for batch_idx, batch in enumerate(train_dataloader):
 
@@ -172,7 +172,7 @@ class LoRATrainer:
                     self.clear_memory()
     
                 # 進捗率　= 残りエポック数　/ 総エポック数 + 現在のバッチ数 / 総バッチ数
-                progress = (epoch / num_epochs) + ((batch_idx + 1) / len(train_dataloader)) * (1 / num_epochs)
+                progress = ((epoch-1) / num_epochs) + ((batch_idx + 1) / len(train_dataloader)) * (1 / num_epochs)
                 # 予想終了時刻を表示する
                 estimated_end_time = datetime_start + timedelta(seconds=((datetime.now() - datetime_start).total_seconds() / progress))
                 print(f"Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}, Epoch {epoch:2d}, Batch {batch_idx:3d}, Loss: {loss.item():.4f}, Memory: {self.get_memory_usage()}, Estimated end time: {estimated_end_time.strftime('%Y-%m-%d %H:%M:%S')}")
@@ -181,9 +181,9 @@ class LoRATrainer:
 
             # モデル保存
             # Save only the LoRA weights
-            if epoch % 5 == 0 or epoch == num_epochs - 1:
+            if epoch % 5 == 0 or epoch == num_epochs:
                  # Create directory if it doesn't exist
-                 save_dir = f"models/lora_weights/epoch_{epoch}"
+                 save_dir = f"models/lora_weights/epoch_{epoch:02d}"
                  os.makedirs(save_dir, exist_ok=True)
                  self.unet.save_pretrained(save_dir)
                  print(f"LoRA weights saved to {save_dir}")

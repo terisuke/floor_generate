@@ -16,7 +16,7 @@ if src_dir not in sys.path:
 
 # Using Placeholders for now as the actual classes might not be fully integrated or might depend on UI state
 class FloorPlanGeneratorPlaceholderCLI:
-    def __init__(self, model_path="models/lora_weights/epoch_15"): # Default to a late epoch
+    def __init__(self, model_path="models/lora_weights/epoch_20"): # Default to a late epoch
         print(f"CLI Placeholder: FloorPlanGenerator initialized (model: {model_path})")
         # In a real scenario, load the LoRA model here
         # self.trainer = LoRATrainer()
@@ -74,7 +74,7 @@ def main():
     parser.add_argument("--rooms", type=str, default="4LDK", help="Number of rooms (e.g., 3LDK, 4LDK). Used in prompt.")
     parser.add_argument("--style", type=str, default="modern", help="Architectural style (e.g., modern, traditional).")
     parser.add_argument("--output_dir", type=str, default="outputs", help="Directory to save generated files.")
-    parser.add_argument("--model_path", type=str, default="models/lora_weights/epoch_15", 
+    parser.add_argument("--model_path", type=str, default="models/lora_weights/epoch_20", 
                         help="Path to the trained LoRA model weights directory.")
     parser.add_argument("--no_3d", action="store_true", help="Skip FreeCAD 3D model generation.")
     parser.add_argument("--type", type=str, default="single_family_house", help="Type of building (e.g., single_family_house, apartment).")
