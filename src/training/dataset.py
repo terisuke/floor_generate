@@ -32,7 +32,7 @@ class FloorPlanDataset(Dataset):
         self.target_sizes = (target_size, target_size)
         self.channel_count = 4
 
-        self.train_data = self.load_train_data()
+        self.train_data = self.load_train_data(organize_raw)
 
     def __len__(self):
         return len(self.pairs)
