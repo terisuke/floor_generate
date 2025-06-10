@@ -247,7 +247,6 @@ class FloorPlanDataset(Dataset):
             width_per_grid = width_image / width_grids
             height_per_grid = height_image / height_grids
 
-            img_conv = img_base.copy()
 
             structural_elements = metadata.get('structural_elements', None)
             if structural_elements is None or not isinstance(structural_elements, list):
@@ -257,19 +256,20 @@ class FloorPlanDataset(Dataset):
                     {"type": "balcony", "grid_x": 0.0, "grid_y": 7.0, "grid_width": 3.0, "grid_height": 3.0, "name": "balcony_3"}
                 ]
         
-            img_plan = np.zeros((height_image, width_image, 3), dtype=np.uint8)
+            img_plan = img_base.copy()
             for item in structural_elements:
                 element_type = item['type']
                 grid_x1 = round(item['grid_x'] * width_per_grid)
                 grid_y1 = round(item['grid_y'] * height_per_grid)
                 grid_x2 = round((item['grid_x'] + item['grid_width']) * width_per_grid)
                 grid_y2 = round((item['grid_y'] + item['grid_height']) * height_per_grid)
-                # 階段は赤、玄関は緑、バルコニーは青、他は黒
+                # 階段は赤、玄関は緑、バルコニーは青で囲む
                 fill_color_dict = { "stair": (255, 0, 0), "entrance": (0, 255, 0), "balcony": (0, 0, 255) }
                 fill_color = fill_color_dict.get(element_type, (0, 0, 0))
                 cv2.rectangle(img_plan, (grid_x1, grid_y1), (grid_x2, grid_y2), fill_color, thickness=5)
 
-            img_plan = cv2.cvtColor(img_plan, cv2.COLOR_RGB2BGR)
+            # OpenCVのBGR配色を、PyTorchのRGB配色に変換する
+            img_plan = cv2.cvtColor(img_plan, cv2.COLOR_BGR2RGB)
 
             # マスクに外枠をつける
             margin = 0.05
