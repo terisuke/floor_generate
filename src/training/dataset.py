@@ -35,10 +35,10 @@ class FloorPlanDataset(Dataset):
         self.train_data = self.load_train_data(organize_raw)
 
     def __len__(self):
-        return len(self.pairs)
+        return len(self.train_data)
 
     def __getitem__(self, idx):
-        if idx >= len(self.pairs):
+        if idx >= len(self.train_data):
             raise IndexError("Dataset index out of range")
             
         train_datum = self.train_data[idx]
@@ -78,7 +78,7 @@ class FloorPlanDataset(Dataset):
         plan_tensor = torch.from_numpy(channels)  # [4, H, W]
 
         # プロンプト生成
-        prompt = self.generate_prompt(metadata)
+        prompt = self.create_prompt(metadata)
 
         return {
             'condition': mask_tensor,
@@ -172,7 +172,7 @@ class FloorPlanDataset(Dataset):
                     print(f"Error organizing {png_path}: {e}")
                     continue
             
-            print(f"Successfully organized {organized_count} data pairs")
+            print(f"Successfully organized {organized_count} datasets")
 
         # meta_integrated.json と img_base.png を読み込み、学習用データを生成する
         train_data = []
@@ -209,7 +209,7 @@ class FloorPlanDataset(Dataset):
                 print(f"Error loading metadata from {meta_integrated_path}: {e}")
                 continue
 
-        print(f"Loaded {len(train_data)} valid data pairs.")
+        print(f"Loaded {len(train_data)} valid datasets.")
         return train_data
 
     def render_pair_images(self, metadata:dict, img_base_path:str):
