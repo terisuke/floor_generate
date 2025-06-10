@@ -295,11 +295,9 @@ class FloorPlanDataset(Dataset):
                 # 階段は赤、玄関は緑、バルコニーは青、他は黒
                 fill_color_dict = { "stair": (255, 0, 0), "entrance": (0, 255, 0), "balcony": (0, 0, 255) }
                 fill_color = fill_color_dict.get(element_type, (0, 0, 0))
-                cv2.rectangle(img_plan, (grid_x1, grid_y1), (grid_x2, grid_y2), fill_color, thickness=-1)
-                cv2.rectangle(img_conv, (grid_x1, grid_y1), (grid_x2, grid_y2), fill_color, thickness=5)
+                cv2.rectangle(img_plan, (grid_x1, grid_y1), (grid_x2, grid_y2), fill_color, thickness=5)
 
             img_plan = cv2.cvtColor(img_plan, cv2.COLOR_RGB2BGR)
-            img_conv = cv2.cvtColor(img_conv, cv2.COLOR_RGB2BGR)
 
             # マスクに外枠をつける
             margin = 0.05
@@ -309,11 +307,9 @@ class FloorPlanDataset(Dataset):
 
             img_plan = cv2.resize(img_plan, self.target_size)
             img_mask = cv2.resize(img_mask, self.target_size)
-            img_conv = cv2.resize(img_conv, self.target_size)
 
             cv2.imwrite(f"{dir_path}/floor_plan.png", img_plan)
             cv2.imwrite(f"{dir_path}/site_mask.png", img_mask)
-            cv2.imwrite(f"{dir_path}/conv.png", img_conv)
 
             result_pair = {
                 "dir_path": dir_path,
