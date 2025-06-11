@@ -11,8 +11,29 @@ if src_dir not in sys.path:
     sys.path.insert(0, src_dir)
 
 # These would be the actual implementation classes
-# from inference.generator import FloorPlanGenerator # Assuming this will be the main generator class
+from inference.generator import FloorPlanGenerator # Assuming this will be the main generator class
 # from freecad_bridge.fcstd_generator import FreeCADGenerator
+
+class FloorPlanGeneratorCLI:
+    def __init__(self, model_path="models/lora_weights/epoch_20"):
+        print(f"FloorPlanGenerator initialized (model: {model_path})")
+        self.generator = FloorPlanGenerator()
+
+    def create_site_mask(self, width_grids, height_grids, target_size=512):
+        mask = self.generator.create_site_mask(width_grids, height_grids)
+        return mask
+
+    def generate_plan(self, site_mask_image, prompt):
+        raw_plan_rgba = self.generator.generate_plan(site_mask_image, prompt)
+        return raw_plan_rgba
+    
+    def validate_constraints(self, raw_plan_image):
+        validated_plan_display = self.generator.validate_constraints(raw_plan_image)
+        return validated_plan_display
+    
+    def to_svg(self, plan_image):
+        svg_data = self.generator.to_svg(plan_image)
+        return svg_data
 
 # Using Placeholders for now as the actual classes might not be fully integrated or might depend on UI state
 class FloorPlanGeneratorPlaceholderCLI:
@@ -93,7 +114,7 @@ def main():
         os.makedirs(fc_dir, exist_ok=True)
 
     # Initialize generators (using placeholders for CLI)
-    plan_generator = FloorPlanGeneratorPlaceholderCLI(model_path=args.model_path)
+    plan_generator = FloorPlanGeneratorCLI(model_path=args.model_path)
     if not args.no_3d:
         freecad_generator = FreeCADGeneratorPlaceholderCLI()
 

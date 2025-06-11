@@ -125,17 +125,17 @@ class FloorPlanGenerator:
             return True
         return False
         
-    def create_site_mask(self, width_grids, height_grids):
+    def create_site_mask(self, width_grids, height_grids, target_size=512):
         """敷地マスクを生成"""
-        mask = np.ones((512, 512), dtype=np.uint8) * 255
+        mask = np.ones((target_size, target_size), dtype=np.uint8) * 255
         
-        grid_size = min(512 // max(width_grids, height_grids), 20)
+        grid_size = min(target_size // max(width_grids, height_grids), 20)
         
         site_width = width_grids * grid_size
         site_height = height_grids * grid_size
         
-        start_x = (512 - site_width) // 2
-        start_y = (512 - site_height) // 2
+        start_x = (target_size - site_width) // 2
+        start_y = (target_size - site_height) // 2
         
         cv2.rectangle(mask, 
                      (start_x, start_y), 
