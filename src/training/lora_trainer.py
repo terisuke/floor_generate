@@ -31,6 +31,9 @@ class LoRATrainer:
         self.dtype = dtype
         print(f"Using dtype: {self.dtype}")
 
+        if lora_alpha > r * 2:
+            print(f"Warning: lora_alpha ({lora_alpha}) is greater than r * 2 ({r * 2}). This may cause instability.")
+
         self.pipeline = StableDiffusionPipeline.from_pretrained(
             self.model_id,
             torch_dtype=self.dtype,
