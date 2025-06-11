@@ -29,12 +29,7 @@ class FloorPlanGenerator:
         """初期化"""
         self.trainer = LoRATrainer()
         self.device = self.trainer.device
-        
-        if self.device == "cpu":
-            print("Running on CPU - using float32 for compatibility")
-            self.dtype = torch.float32
-        else:
-            self.dtype = torch.float16
+        self.dtype = self.trainer.dtype
             
         if lora_weights_path and os.path.exists(lora_weights_path):
             try:

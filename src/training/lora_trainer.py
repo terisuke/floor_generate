@@ -17,7 +17,7 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader
 
 class LoRATrainer:
-    def __init__(self, r=64, lora_alpha=64):
+    def __init__(self, r=8, lora_alpha=8, dtype=torch.float16):
         if torch.cuda.is_available():
             self.device = "cuda"
         elif torch.backends.mps.is_available():
@@ -28,10 +28,12 @@ class LoRATrainer:
 
         # Base model - using v1-4 which is open access and smaller
         self.model_id = "CompVis/stable-diffusion-v1-4"
-        # Load in float32 for MPS compatibility during training, will convert to float16 for inference
+        self.dtype = dtype
+        print(f"Using dtype: {self.dtype}")
+
         self.pipeline = StableDiffusionPipeline.from_pretrained(
             self.model_id,
-            torch_dtype=torch.float32, # Use float32 for MPS training
+            torch_dtype=self.dtype,
             use_auth_token=False,
             safety_checker=None,
             requires_safety_checker=False
@@ -67,8 +69,8 @@ class LoRATrainer:
             lora_dropout=0.1,
         )
 
-        # Ensure UNet is in float32 before applying LoRA
-        self.pipeline.unet = self.pipeline.unet.to(torch.float32)
+        # Ensure UNet is in the correct dtype before applying LoRA
+        self.pipeline.unet = self.pipeline.unet.to(self.dtype)
 
         # Apply LoRA to UNet
         self.unet = get_peft_model(self.pipeline.unet, self.lora_config)
@@ -139,13 +141,13 @@ class LoRATrainer:
             for batch_idx, batch in enumerate(train_dataloader):
 
                 # バッチデータ
-                # Ensure tensors are in float32 for MPS training
-                site_masks = batch['condition'].to(self.device, dtype=torch.float32)
-                target_plans = batch['target'].to(self.device, dtype=torch.float32)
+                # Ensure tensors are in the correct dtype for MPS training
+                site_masks = batch['condition'].to(self.device, dtype=self.dtype)
+                target_plans = batch['target'].to(self.device, dtype=self.dtype)
                 prompts = batch['prompt']
 
                 # ノイズ追加
-                noise = torch.randn_like(target_plans).to(self.device, dtype=torch.float32)
+                noise = torch.randn_like(target_plans).to(self.device, dtype=self.dtype)
                 timesteps = torch.randint(0, self.scheduler.config.num_train_timesteps, (target_plans.shape[0],), device=self.device).long()
 
                 noisy_plans = self.scheduler.add_noise(
@@ -153,10 +155,10 @@ class LoRATrainer:
                 )
 
                 # 予測
-                # No need for autocast with MPS and float32, managed by device
+                # No need for autocast with MPS and the correct dtype, managed by device
                 
                 # Text encoding
-                # Ensure input_ids are on the correct device
+                # Ensure input_ids are on the correct device and dtype
                 text_input_ids = self.pipeline.tokenizer(
                     prompts,
                     padding=True,
@@ -210,8 +212,8 @@ class LoRATrainer:
         """単一プロンプトでの推論実行"""
         self.unet.eval()
 
-        # Move site_mask to device and ensure float32
-        site_mask = site_mask.to(self.device, dtype=torch.float32)
+        # Move site_mask to device and ensure the correct dtype
+        site_mask = site_mask.to(self.device, dtype=self.dtype)
         
         # Add batch dimension if missing
         if site_mask.ndim == 3:
@@ -326,12 +328,7 @@ class LoRATrainer:
         
         from diffusers import StableDiffusionPipeline
         
-        if self.device == "cpu":
-            dtype = torch.float32
-        else:
-            print("MPS device detected. Forcing float32 for inference due to potential MPS issues with float16.")
-            dtype = torch.float32
-        
+        # Get the base model from the UNet
         if hasattr(self.unet, "get_base_model"):
             unet_for_pipeline = self.unet.get_base_model()
         elif hasattr(self.unet, "base_model"):
@@ -342,7 +339,7 @@ class LoRATrainer:
         pipeline = StableDiffusionPipeline.from_pretrained(
             self.model_id,
             unet=unet_for_pipeline,
-            torch_dtype=dtype,
+            torch_dtype=self.dtype,
             use_auth_token=False,
             safety_checker=None,
             requires_safety_checker=False
