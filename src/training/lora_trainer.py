@@ -19,11 +19,11 @@ from torch.utils.data import DataLoader
 class LoRATrainer:
     def __init__(self, r=64, lora_alpha=64):
         if torch.cuda.is_available():
-            device = "cuda"
+            self.device = "cuda"
         elif torch.backends.mps.is_available():
-            device = "mps"
+            self.device = "mps"
         else:
-            device = "cpu"
+            self.device = "cpu"
         print(f"Using device: {self.device}")
 
         # Base model - using v1-4 which is open access and smaller
