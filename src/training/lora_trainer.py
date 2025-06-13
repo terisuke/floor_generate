@@ -18,7 +18,12 @@ from torch.utils.data import DataLoader
 
 class LoRATrainer:
     def __init__(self, r=64, lora_alpha=64):
-        self.device = "mps" if torch.backends.mps.is_available() else "cpu"
+        if torch.cuda.is_available():
+            device = "cuda"
+        elif torch.backends.mps.is_available():
+            device = "mps"
+        else:
+            device = "cpu"
         print(f"Using device: {self.device}")
 
         # Base model - using v1-4 which is open access and smaller
@@ -79,12 +84,23 @@ class LoRATrainer:
         self.scheduler = DDPMScheduler.from_config(self.pipeline.scheduler.config)
 
         # メモリ使用量を監視
-        if self.device == "mps":
+        if self.device == "cuda":
+            torch.cuda.empty_cache()
+        elif self.device == "mps":
             torch.mps.empty_cache()
 
     def get_memory_usage(self):
         """メモリ使用量を取得"""
-        if self.device == "mps":
+        if self.device == "cuda":
+            try:
+                # CUDAデバイスのメモリ使用量を取得
+                current = torch.cuda.memory_allocated() / (1024**3)  # GBに変換
+                allocated = torch.cuda.max_memory_allocated() / (1024**3)    # GBに変換
+                cached = torch.cuda.memory_cached() / (1024**3)  # GBに変換
+                return f"CUDA: {current:.2f}GB allocated, {allocated:.2f}GB max allocated, {cached:.2f}GB cached"
+            except Exception as e:
+                return f"CUDA memory info unavailable: {str(e)}"
+        elif self.device == "mps":
             try:
                 # MPSデバイスのメモリ使用量を取得
                 allocated = torch.mps.current_allocated_memory() / (1024**3)  # GBに変換
@@ -104,7 +120,9 @@ class LoRATrainer:
 
     def clear_memory(self):
         """メモリをクリア"""
-        if self.device == "mps":
+        if self.device == "cuda":
+            torch.cuda.empty_cache()
+        elif self.device == "mps":
             torch.mps.empty_cache()
 
     def train(self, train_dataloader: DataLoader, num_epochs=20):
