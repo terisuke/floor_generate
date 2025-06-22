@@ -18,7 +18,7 @@ class FloorPlanDataset(Dataset):
     target_sizes : tuple[int, int]
     channel_count : int
 
-    def __init__(self, data_dir="data", transform=None, organize_raw=False, target_size:int=512):
+    def __init__(self, data_dir="data", transform=None, organize_raw=False, target_size=None):
         """
         Args:
             data_dir: データディレクトリのパス
@@ -29,7 +29,7 @@ class FloorPlanDataset(Dataset):
         self.data_dir = data_dir
         self.organize_raw = organize_raw
         self.transform = transform
-        self.target_sizes = (target_size, target_size)
+        self.target_sizes = (target_size, target_size) if target_size is not None else None
         self.channel_count = 4
 
         self.train_data = self.load_train_data(organize_raw)
@@ -214,7 +214,7 @@ class FloorPlanDataset(Dataset):
 
     def render_pair_images(self, metadata:dict, img_base_path:str):
         """
-        '*_integrated.json' metadataから、*_floor_plan.png, *_site_mask.png を生成する
+        '*_integrated.json' metadataから、*_floor_plan.png, *_floor_mask.png, *_floor_conv.png を生成する
 
         Args:
             metadata: integrated metadata (json)
@@ -256,32 +256,59 @@ class FloorPlanDataset(Dataset):
                     {"type": "balcony", "grid_x": 0.0, "grid_y": 7.0, "grid_width": 3.0, "grid_height": 3.0, "name": "balcony_3"}
                 ]
         
-            img_plan = img_base.copy()
+            img_base_height = img_base.shape[0]
+            img_base_width = img_base.shape[1]
+
+            # tmp_planは、img_baseの上に枠を描画した画像
+            tmp_plan = img_base.copy()
+            # tmp_maskは、白背景の上に塗りつぶし領域を描画した画像
+            tmp_mask = np.ones((img_base_height, img_base_width, 3), dtype=np.uint8) * 255
             for item in structural_elements:
                 element_type = item['type']
                 grid_x1 = round(item['grid_x'] * width_per_grid)
                 grid_y1 = round(item['grid_y'] * height_per_grid)
                 grid_x2 = round((item['grid_x'] + item['grid_width']) * width_per_grid)
                 grid_y2 = round((item['grid_y'] + item['grid_height']) * height_per_grid)
-                # 階段は赤、玄関は緑、バルコニーは青で囲む
                 fill_color_dict = { "stair": (255, 0, 0), "entrance": (0, 255, 0), "balcony": (0, 0, 255) }
                 fill_color = fill_color_dict.get(element_type, (0, 0, 0))
-                cv2.rectangle(img_plan, (grid_x1, grid_y1), (grid_x2, grid_y2), fill_color, thickness=5)
+                cv2.rectangle(tmp_plan, (grid_x1, grid_y1), (grid_x2, grid_y2), fill_color, thickness=5)
+                cv2.rectangle(tmp_mask, (grid_x1, grid_y1), (grid_x2, grid_y2), fill_color, thickness=-1)
+
+            # img_baseとgrid_dimensionsに合わせて、サイズ・配置を決定
+            img_mask_width = int(img_base_width / width_grids * 16)
+            img_mask_height = int(img_base_height / height_grids * 16)
+            mask_start_x = int((img_mask_width - img_base_width) / 2)
+            mask_start_y = int((img_mask_height - img_base_height) / 2)
+            mask_end_x = int(mask_start_x + img_base_width)
+            mask_end_y = int(mask_start_y + img_base_height)
+            
+            # img_plan : 16x16gridに、img_baseを配置
+            img_plan = np.zeros((img_mask_height, img_mask_width, 3), dtype=np.uint8)
+            img_plan[mask_start_y:mask_end_y, mask_start_x:mask_end_x] = img_base
+
+            # img_mask : 16x16gridに、階段・玄関・バルコニーのマスクを配置
+            img_mask = np.zeros((img_mask_height, img_mask_width, 3), dtype=np.uint8)
+            img_mask[mask_start_y:mask_end_y, mask_start_x:mask_end_x] = tmp_mask
+
+            # img_conv : 16x16gridに、img_baseを配置し、階段・玄関・バルコニーの枠を上乗せ
+            img_conv = np.zeros((img_mask_height, img_mask_width, 3), dtype=np.uint8)
+            img_conv = cv2.rectangle(img_conv, (mask_start_x, mask_start_y), (mask_end_x, mask_end_y), (255, 255, 255), thickness=-1)
+            img_conv[mask_start_y:mask_end_y, mask_start_x:mask_end_x] = tmp_plan
 
             # OpenCVのBGR配色を、PyTorchのRGB配色に変換する
             img_plan = cv2.cvtColor(img_plan, cv2.COLOR_BGR2RGB)
+            img_conv = cv2.cvtColor(img_conv, cv2.COLOR_BGR2RGB)
+            img_mask = cv2.cvtColor(img_mask, cv2.COLOR_BGR2RGB)
+            
+            if self.target_sizes is not None:
+                img_plan = cv2.resize(img_plan, self.target_sizes)
+                img_conv = cv2.resize(img_conv, self.target_sizes)
+                img_mask = cv2.resize(img_mask, self.target_sizes)
 
-            # マスクに外枠をつける
-            margin = 0.05
-            img_mask = np.zeros((height_image, width_image, 3), dtype=np.uint8)
-            img_mask = cv2.rectangle(img_mask, (int(width_image*margin), int(height_image*margin)), (int(width_image*(1-margin)), int(height_image*(1-margin))), (255, 255, 255), thickness=-1)
-            img_mask = cv2.cvtColor(img_mask, cv2.COLOR_BGR2GRAY)
-
-            img_plan = cv2.resize(img_plan, self.target_sizes)
-            img_mask = cv2.resize(img_mask, self.target_sizes)
-
+            # 画像を保存
             cv2.imwrite(f"{dir_path}/floor_plan.png", img_plan)
-            cv2.imwrite(f"{dir_path}/site_mask.png", img_mask)
+            cv2.imwrite(f"{dir_path}/floor_mask.png", img_mask)
+            cv2.imwrite(f"{dir_path}/floor_conv.png", img_conv)
 
             return img_plan, img_mask
 
