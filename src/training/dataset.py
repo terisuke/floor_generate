@@ -18,7 +18,7 @@ class FloorPlanDataset(Dataset):
     target_sizes : tuple[int, int]
     channel_count : int
 
-    def __init__(self, data_dir="data", transform=None, organize_raw=False, target_size=None):
+    def __init__(self, data_dir="data", transform=None, organize_raw=False, target_size=512):
         """
         Args:
             data_dir: データディレクトリのパス
@@ -29,7 +29,7 @@ class FloorPlanDataset(Dataset):
         self.data_dir = data_dir
         self.organize_raw = organize_raw
         self.transform = transform
-        self.target_sizes = (target_size, target_size) if target_size is not None else None
+        self.target_sizes = (target_size, target_size)
         self.channel_count = 4
 
         self.train_data = self.load_train_data(organize_raw)
@@ -277,21 +277,22 @@ class FloorPlanDataset(Dataset):
             # img_baseとgrid_dimensionsに合わせて、サイズ・配置を決定
             img_mask_width = int(img_base_width / width_grids * 16)
             img_mask_height = int(img_base_height / height_grids * 16)
-            mask_start_x = int((img_mask_width - img_base_width) / 2)
-            mask_start_y = int((img_mask_height - img_base_height) / 2)
+            img_mask_size = max(img_mask_width, img_mask_height)
+            mask_start_x = int((img_mask_size - img_base_width) / 2)
+            mask_start_y = int((img_mask_size - img_base_height) / 2)
             mask_end_x = int(mask_start_x + img_base_width)
             mask_end_y = int(mask_start_y + img_base_height)
-            
+
             # img_plan : 16x16gridに、img_baseを配置
-            img_plan = np.zeros((img_mask_height, img_mask_width, 3), dtype=np.uint8)
+            img_plan = np.zeros((img_mask_size, img_mask_size, 3), dtype=np.uint8)
             img_plan[mask_start_y:mask_end_y, mask_start_x:mask_end_x] = img_base
 
             # img_mask : 16x16gridに、階段・玄関・バルコニーのマスクを配置
-            img_mask = np.zeros((img_mask_height, img_mask_width, 3), dtype=np.uint8)
+            img_mask = np.zeros((img_mask_size, img_mask_size, 3), dtype=np.uint8)
             img_mask[mask_start_y:mask_end_y, mask_start_x:mask_end_x] = tmp_mask
 
             # img_conv : 16x16gridに、img_baseを配置し、階段・玄関・バルコニーの枠を上乗せ
-            img_conv = np.zeros((img_mask_height, img_mask_width, 3), dtype=np.uint8)
+            img_conv = np.zeros((img_mask_size, img_mask_size, 3), dtype=np.uint8)
             img_conv = cv2.rectangle(img_conv, (mask_start_x, mask_start_y), (mask_end_x, mask_end_y), (255, 255, 255), thickness=-1)
             img_conv[mask_start_y:mask_end_y, mask_start_x:mask_end_x] = tmp_plan
 
@@ -299,13 +300,11 @@ class FloorPlanDataset(Dataset):
             img_plan = cv2.cvtColor(img_plan, cv2.COLOR_BGR2RGB)
             img_conv = cv2.cvtColor(img_conv, cv2.COLOR_BGR2RGB)
             img_mask = cv2.cvtColor(img_mask, cv2.COLOR_BGR2RGB)
-            
-            if self.target_sizes is not None:
-                img_plan = cv2.resize(img_plan, self.target_sizes)
-                img_conv = cv2.resize(img_conv, self.target_sizes)
-                img_mask = cv2.resize(img_mask, self.target_sizes)
 
-            # 画像を保存
+            img_plan = cv2.resize(img_plan, self.target_sizes)
+            img_conv = cv2.resize(img_conv, self.target_sizes)
+            img_mask = cv2.resize(img_mask, self.target_sizes)
+
             cv2.imwrite(f"{dir_path}/floor_plan.png", img_plan)
             cv2.imwrite(f"{dir_path}/floor_mask.png", img_mask)
             cv2.imwrite(f"{dir_path}/floor_conv.png", img_conv)
@@ -397,42 +396,43 @@ class FloorPlanDataset(Dataset):
                 ]
 
             # プロンプト生成
-            prompt_parts = []
-            prompt_parts.append(f"grid_{grid_dimensions['width_grids']}x{grid_dimensions['height_grids']}")
-            prompt_parts.append(f"building_{building_context['type']}_{building_context['floors_total']}floors")
-            prompt_parts.append(f"current_floor_{floor}")
-            prompt_parts.append("style_modern")
+            # prompt_parts = []
+            # prompt_parts.append(f"grid_{grid_dimensions['width_grids']}x{grid_dimensions['height_grids']}")
+            # prompt_parts.append(f"building_{building_context['type']}_{building_context['floors_total']}floors")
+            # prompt_parts.append(f"current_floor_{floor}")
+            # prompt_parts.append("style_modern")
 
-            if "entrance" in training_hints['floor_constraints']['prohibited_elements']:
-                prompt_parts.append("entrance_prohibited")
-            elif "entrance" in training_hints['floor_constraints']['required_elements'] or training_hints['has_entrance']:
-                prompt_parts.append("entrance_required")
+            # if "entrance" in training_hints['floor_constraints']['prohibited_elements']:
+            #     prompt_parts.append("entrance_prohibited")
+            # elif "entrance" in training_hints['floor_constraints']['required_elements'] or training_hints['has_entrance']:
+            #     prompt_parts.append("entrance_required")
 
-            if "stair" in training_hints['floor_constraints']['prohibited_elements']:
-                prompt_parts.append("stair_prohibited")
-            elif "stair" in training_hints['floor_constraints']['required_elements'] or training_hints['has_stair']:
-                prompt_parts.append("stair_required")
+            # if "stair" in training_hints['floor_constraints']['prohibited_elements']:
+            #     prompt_parts.append("stair_prohibited")
+            # elif "stair" in training_hints['floor_constraints']['required_elements'] or training_hints['has_stair']:
+            #     prompt_parts.append("stair_required")
 
-            if "balcony" in training_hints['floor_constraints']['prohibited_elements']:
-                prompt_parts.append("balcony_prohibited")
-            elif "balcony" in training_hints['floor_constraints']['required_elements'] or training_hints['has_balcony']:
-                prompt_parts.append("balcony_required")
+            # if "balcony" in training_hints['floor_constraints']['prohibited_elements']:
+            #     prompt_parts.append("balcony_prohibited")
+            # elif "balcony" in training_hints['floor_constraints']['required_elements'] or training_hints['has_balcony']:
+            #     prompt_parts.append("balcony_required")
 
-            if 'living' in zones:
-                idx_living = zones.index(next(z for z in zones if z['type'] == 'living'))
-                prompt_parts.append(f"living_{zones[idx_living]['approximate_grids']}grids")
-            if 'private' in zones:
-                idx_private = zones.index(next(z for z in zones if z['type'] == 'private'))
-                prompt_parts.append(f"private_{zones[idx_private]['approximate_grids']}grids")
-            if 'service' in zones:
-                idx_service = zones.index(next(z for z in zones if z['type'] == 'service'))
-                prompt_parts.append(f"service_{zones[idx_service]['approximate_grids']}grids")
+            # if 'living' in zones:
+            #     idx_living = zones.index(next(z for z in zones if z['type'] == 'living'))
+            #     prompt_parts.append(f"living_{zones[idx_living]['approximate_grids']}grids")
+            # if 'private' in zones:
+            #     idx_private = zones.index(next(z for z in zones if z['type'] == 'private'))
+            #     prompt_parts.append(f"private_{zones[idx_private]['approximate_grids']}grids")
+            # if 'service' in zones:
+            #     idx_service = zones.index(next(z for z in zones if z['type'] == 'service'))
+            #     prompt_parts.append(f"service_{zones[idx_service]['approximate_grids']}grids")
 
-            prompt_parts.append("japanese_house")
-            prompt_parts.append(f"{scale_info['grid_mm']}mm_grid")
-            prompt_parts.append("architectural_plan")
+            # prompt_parts.append("japanese_house")
+            # prompt_parts.append(f"{scale_info['grid_mm']}mm_grid")
+            # prompt_parts.append("architectural_plan")
 
-            prompt = ", ".join(prompt_parts)
+            # prompt = ", ".join(prompt_parts)
+            prompt = f"architectural plan of a Japanese house, <{grid_dimensions['height_grids']} grids high>, <{grid_dimensions['width_grids']} grids wide>, <{floor} floor>"
             return prompt
             
         except Exception as e:

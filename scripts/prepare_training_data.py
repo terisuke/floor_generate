@@ -14,7 +14,7 @@ def main():
     parser = argparse.ArgumentParser(description="Prepare training data from floor plans.")
     parser.add_argument("--data_dir", type=str, default="data",
                         help="Directory containing the training data pairs.")
-    parser.add_argument("--image_size", type=int, default=None,
+    parser.add_argument("--image_size", type=int, default=512,
                         help="Target size of the training data.")
     parser.add_argument("--organize_raw", action="store_true",
                         help="Organize training data from RAW directory.")
