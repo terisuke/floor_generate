@@ -87,92 +87,82 @@ class FloorPlanDataset(Dataset):
             'metadata': metadata
         }        
 
-    def extract_floor_num(self, filename):
-        """
-        ファイル名から数値と階数を抽出する
-        
-        Args:
-            filename: ファイル名（拡張子なし）
-            
-        Returns:
-            str: 数値（5桁0埋め）_階数 または None
-        """
-        # 階数のパターン（1f, 2f）
-        floor_pattern = r'([12])f'
-        # 数値のパターン（3-5桁）
-        number_pattern = r'(\d{3,5})'
-        
-        # 階数を検索
-        floor_match = re.search(floor_pattern, filename.lower())
-        if not floor_match:
-            return None
-            
-        floor = f"{floor_match.group(1)}f"
-        
-        # 数値を検索
-        number_match = re.search(number_pattern, filename)
-        if not number_match:
-            return None
-            
-        number = number_match.group(1).zfill(5)
-        
-        return f"{number}_{floor}"
-    
     def load_train_data(self, organize_raw=False):
-        # 訓練データ用のディレクトリを作成
         training_dir = os.path.join(self.data_dir, "training")
         if not os.path.exists(training_dir):
             os.makedirs(training_dir, exist_ok=True)
 
-        # rawディレクトリからtrainingディレクトリに整理する
+        summary_info = []  # まとめ用リスト
+
         if organize_raw:
             print("Organizing raw to training ...")
-            # rawディレクトリ内のPNGファイルを検索
             raw_dir = os.path.join(self.data_dir, "raw")
             if not os.path.exists(raw_dir):
                 print(f"Raw directory not found: {raw_dir}")
                 return
-        
+
             png_files = glob(os.path.join(raw_dir, "*.png"))
             print(f"Found {len(png_files)} PNG files in {raw_dir}")
-            
-            organized_count = 0
+
+            # ファイル名ベースごとにグループ化
+            file_groups = {}
             for png_path in png_files:
-                try:
-                    file_stem = Path(png_path).stem
-                    floor_num = self.extract_floor_num(file_stem)
-                    
-                    if not floor_num:
-                        print(f"Could not extract floor num from {file_stem}")
+                file_stem = Path(png_path).stem
+                # 末尾の _1f, _2f など階数部分を除去
+                base = re.sub(r'_[12]f$', '', file_stem, flags=re.IGNORECASE)
+                if base not in file_groups:
+                    file_groups[base] = []
+                file_groups[base].append(png_path)
+
+            # 通し番号を割り振り
+            base_to_id = {}
+            for idx, base in enumerate(sorted(file_groups.keys())):
+                base_to_id[base] = str(idx+1).zfill(5)
+
+            organized_count = 0
+            for base, png_list in file_groups.items():
+                for png_path in png_list:
+                    try:
+                        file_stem = Path(png_path).stem
+                        # _1f, _2f など階数部分を抽出
+                        floor_match = re.search(r'_([12]f)$', file_stem, re.IGNORECASE)
+                        floor = floor_match.group(1).lower() if floor_match else '1f'  # デフォルト1f
+                        folder_name = f"{base_to_id[base]}_{floor}"
+                        integrated_json_path = png_path.replace('.png', '_integrated.json')
+                        elements_json_path = png_path.replace('.png', '_elements.json')
+                        if not os.path.exists(integrated_json_path):
+                            print(f"Integrated JSON not found for {file_stem}")
+                            continue
+                        target_dir = os.path.join(training_dir, folder_name)
+                        os.makedirs(target_dir, exist_ok=True)
+                        shutil.copy2(png_path, os.path.join(target_dir, "img_base.png"))
+                        shutil.copy2(integrated_json_path, os.path.join(target_dir, "meta_integrated.json"))
+                        if os.path.exists(elements_json_path):
+                            shutil.copy2(elements_json_path, os.path.join(target_dir, "meta_elements.json"))
+                        # integrated.jsonから情報抽出
+                        with open(integrated_json_path, 'r', encoding='utf-8') as f:
+                            meta = json.load(f)
+                        grid_w = meta.get('grid_dimensions', {}).get('width_grids', None)
+                        grid_h = meta.get('grid_dimensions', {}).get('height_grids', None)
+                        summary_info.append({
+                            'folder': folder_name,
+                            'crop_id': meta.get('crop_id', None),
+                            'original_pdf': meta.get('original_pdf', None),
+                            'floor': meta.get('floor', None),
+                            'width_grids': grid_w,
+                            'height_grids': grid_h
+                        })
+                        organized_count += 1
+                        print(f"Organized {file_stem} -> {folder_name}")
+                    except Exception as e:
+                        print(f"Error organizing {png_path}: {e}")
                         continue
-                    
-                    # 対応するJSONファイルのパス
-                    integrated_json_path = png_path.replace('.png', '_integrated.json')
-                    elements_json_path = png_path.replace('.png', '_elements.json')
-                    
-                    if not os.path.exists(integrated_json_path):
-                        print(f"Integrated JSON not found for {file_stem}")
-                        continue
-                    
-                    # 訓練データ用のディレクトリを作成
-                    target_dir = os.path.join(training_dir, floor_num)
-                    os.makedirs(target_dir, exist_ok=True)
-                    
-                    # ファイルをコピー
-                    shutil.copy2(png_path, os.path.join(target_dir, "img_base.png"))
-                    shutil.copy2(integrated_json_path, os.path.join(target_dir, "meta_integrated.json"))
-                    
-                    if os.path.exists(elements_json_path):
-                        shutil.copy2(elements_json_path, os.path.join(target_dir, "meta_elements.json"))
-                    
-                    organized_count += 1
-                    print(f"Organized {file_stem} -> {floor_num}")
-                    
-                except Exception as e:
-                    print(f"Error organizing {png_path}: {e}")
-                    continue
-            
             print(f"Successfully organized {organized_count} datasets")
+            # まとめJSON出力
+            summary_path = os.path.join(training_dir, "summary_info.json")
+            with open(summary_path, 'w', encoding='utf-8') as f:
+                json.dump(summary_info, f, ensure_ascii=False, indent=2)
+            print(f"Summary info saved: {summary_path}")
 
         # meta_integrated.json と img_base.png を読み込み、学習用データを生成する
         train_data = []
@@ -180,23 +170,17 @@ class FloorPlanDataset(Dataset):
             floor_path = os.path.join(training_dir, floor_dir)
             if not os.path.isdir(floor_path):
                 continue
-                
             img_base_path = os.path.join(floor_path, "img_base.png")
             meta_integrated_path = os.path.join(floor_path, "meta_integrated.json")
             meta_elements_path = os.path.join(floor_path, "meta_elements.json")
-            
             if not (os.path.exists(img_base_path) and os.path.exists(meta_integrated_path)):
                 print(f"Warning: Incomplete data in {floor_dir}")
                 continue
-            
             try:
                 with open(meta_integrated_path, 'r') as f:
                     metadata = json.load(f)
-                    
-                # 学習用画像合成
                 img_plan, img_mask = self.render_pair_images(metadata, img_base_path)
                 prompt = self.create_prompt(metadata)
-
                 train_data.append({
                     'dir_path': floor_path,
                     'img_plan': img_plan,
@@ -204,11 +188,9 @@ class FloorPlanDataset(Dataset):
                     'metadata': metadata,
                     'prompt': prompt
                 })
-
             except Exception as e:
                 print(f"Error loading metadata from {meta_integrated_path}: {e}")
                 continue
-
         print(f"Loaded {len(train_data)} valid datasets.")
         return train_data
 
