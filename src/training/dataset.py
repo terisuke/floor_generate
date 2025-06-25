@@ -144,13 +144,22 @@ class FloorPlanDataset(Dataset):
                             meta = json.load(f)
                         grid_w = meta.get('grid_dimensions', {}).get('width_grids', None)
                         grid_h = meta.get('grid_dimensions', {}).get('height_grids', None)
+                        # img_base.pngの画像サイズ取得
+                        img_base_path = os.path.join(target_dir, "img_base.png")
+                        try:
+                            img = cv2.imread(img_base_path)
+                            img_height, img_width = img.shape[:2] if img is not None else (None, None)
+                        except Exception as e:
+                            img_width, img_height = None, None
                         summary_info.append({
                             'folder': folder_name,
                             'crop_id': meta.get('crop_id', None),
                             'original_pdf': meta.get('original_pdf', None),
                             'floor': meta.get('floor', None),
                             'width_grids': grid_w,
-                            'height_grids': grid_h
+                            'height_grids': grid_h,
+                            'img_width': img_width,
+                            'img_height': img_height
                         })
                         organized_count += 1
                         print(f"Organized {file_stem} -> {folder_name}")
@@ -160,8 +169,10 @@ class FloorPlanDataset(Dataset):
             print(f"Successfully organized {organized_count} datasets")
             # まとめJSON出力
             summary_path = os.path.join(training_dir, "summary_info.json")
+            # folderで昇順ソート
+            summary_info_sorted = sorted(summary_info, key=lambda x: x['folder'])
             with open(summary_path, 'w', encoding='utf-8') as f:
-                json.dump(summary_info, f, ensure_ascii=False, indent=2)
+                json.dump(summary_info_sorted, f, ensure_ascii=False, indent=2)
             print(f"Summary info saved: {summary_path}")
 
         # meta_integrated.json と img_base.png を読み込み、学習用データを生成する
