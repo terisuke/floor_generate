@@ -125,9 +125,9 @@ class FloorPlanDataset(Dataset):
                     try:
                         file_stem = Path(png_path).stem
                         # _1f, _2f など階数部分を抽出
-                        floor_match = re.search(r'_([12]f)$', file_stem, re.IGNORECASE)
-                        floor = floor_match.group(1).lower() if floor_match else '1f'  # デフォルト1f
-                        folder_name = f"{base_to_id[base]}_{floor}"
+                        floor_match = re.search(r'_([12])f$', file_stem, re.IGNORECASE)
+                        floor_number = floor_match.group(1) if floor_match else '1'  # デフォルト1
+                        folder_name = f"{base_to_id[base]}_{floor_number}f"
                         integrated_json_path = png_path.replace('.png', '_integrated.json')
                         elements_json_path = png_path.replace('.png', '_elements.json')
                         if not os.path.exists(integrated_json_path):
@@ -140,10 +140,16 @@ class FloorPlanDataset(Dataset):
                         if os.path.exists(elements_json_path):
                             shutil.copy2(elements_json_path, os.path.join(target_dir, "meta_elements.json"))
                         # integrated.jsonから情報抽出
-                        with open(integrated_json_path, 'r', encoding='utf-8') as f:
-                            meta = json.load(f)
-                        grid_w = meta.get('grid_dimensions', {}).get('width_grids', None)
-                        grid_h = meta.get('grid_dimensions', {}).get('height_grids', None)
+                        with open(integrated_json_path, 'r', encoding='utf-8') as f1:
+                            meta_integrated = json.load(f1)
+                        grid_w = meta_integrated.get('grid_dimensions', {}).get('width_grids', None)
+                        grid_h = meta_integrated.get('grid_dimensions', {}).get('height_grids', None)
+                        original_pdf = meta_integrated.get('original_pdf', None)
+                        # elements.jsonから情報抽出
+                        with open(elements_json_path, 'r', encoding='utf-8') as f2:
+                            meta_elements = json.load(f2)
+                        crop_id = meta_elements.get('crop_id', None)
+                        floor = meta_elements.get('floor', None)
                         # img_base.pngの画像サイズ取得
                         img_base_path = os.path.join(target_dir, "img_base.png")
                         try:
@@ -153,9 +159,9 @@ class FloorPlanDataset(Dataset):
                             img_width, img_height = None, None
                         summary_info.append({
                             'folder': folder_name,
-                            'crop_id': meta.get('crop_id', None),
-                            'original_pdf': meta.get('original_pdf', None),
-                            'floor': meta.get('floor', None),
+                            'crop_id': crop_id,
+                            'original_pdf': original_pdf,
+                            'floor': floor,
                             'width_grids': grid_w,
                             'height_grids': grid_h,
                             'img_width': img_width,
